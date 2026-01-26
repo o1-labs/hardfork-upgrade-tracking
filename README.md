@@ -12,7 +12,7 @@ This project provides a simple server to track the upgrade status of nodes in a 
 
 1.  **Clone the repository:**
     ```bash
-    git clone <repository-url>
+    git clone https://github.com/o1-labs/hardfork-upgrade-tracking
     cd hardfork-upgrade-tracking
     ```
 
