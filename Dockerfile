@@ -38,7 +38,7 @@ COPY --from=deps /app/node_modules ./node_modules
 
 # Copy compiled application from build stage
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=build /app/src/generated ./src/generated
 
 # Copy runtime assets
 COPY prisma ./prisma
