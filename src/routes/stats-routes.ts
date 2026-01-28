@@ -7,6 +7,7 @@ const router = Router();
 router.post('/stats', async (req, res) => {
   try {
     const stats: NodeStats = req.body;
+    console.log('Received stats submission:', JSON.stringify(stats, null, 2));
     await statsService.submitStats(stats);
     res.json({ success: true });
   } catch (error) {

@@ -13,7 +13,7 @@ export const statsRepository = {
         chainId: stats.chain_id,
         peerId: stats.peer_id,
         peerCount: stats.peer_count,
-        timestamp: new Date(stats.timestamp),
+        timestamp: new Date(stats.timestamp.replace(' ', 'T')),
         blockProducerPublicKey: stats.block_producer_public_key,
         upgraded,
       },
