@@ -48,6 +48,8 @@ This project provides a simple server to track the upgrade status of nodes in a 
 
 ## 2. Running the Project
 
+### Development Mode
+
 You can run the server in development mode, which will automatically restart on file changes:
 
 ```bash
@@ -56,12 +58,57 @@ npm run dev
 
 The server will start on `http://localhost:3000`.
 
-For production, build the project first and then start the server:
+### Production (Node.js)
+
+Build the project first and then start the server:
 
 ```bash
 npm run build
 npm run start
 ```
+
+### Production (Docker)
+
+Docker images are published to GitHub Container Registry at `ghcr.io/o1-labs/hardfork-upgrade-tracking`.
+
+**Pull and run a pre-built image:**
+
+```bash
+docker run --rm -p 3000:3000 \
+  -e DATABASE_URL="postgresql://user:password@host:5432/db" \
+  -e RELEASE_PERCENTAGE="65" \
+  ghcr.io/o1-labs/hardfork-upgrade-tracking:latest
+```
+
+**Build locally using the Makefile:**
+
+```bash
+# Using Docker
+make build
+
+# Using Podman
+make podman-build
+```
+
+**Run the locally built image:**
+
+```bash
+# Using Docker
+DATABASE_URL="postgresql://user:password@host:5432/db" RELEASE_PERCENTAGE=65 make run
+
+# Using Podman
+DATABASE_URL="postgresql://user:password@host:5432/db" RELEASE_PERCENTAGE=65 make podman-run
+```
+
+The container automatically runs `prisma db push` on startup to apply the database schema.
+
+**Available image tags:**
+| Tag Pattern | Description |
+|-------------|-------------|
+| `latest` | Latest release (from git tags) |
+| `v1.0.0` | Specific release version |
+| `1.0.0-abc1234` | Push to master (version + commit SHA) |
+| `pr-123-abc1234` | Pull request build (PR number + commit SHA) |
 
 ## 3. Viewing the UI
 
