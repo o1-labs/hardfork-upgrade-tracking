@@ -42,6 +42,7 @@ COPY --from=build /app/src/generated ./src/generated
 
 # Copy runtime assets
 COPY prisma ./prisma
+COPY prisma.config.ts ./
 COPY src/favicon.ico ./src/favicon.ico
 COPY package.json ./
 COPY docker-entrypoint.sh ./

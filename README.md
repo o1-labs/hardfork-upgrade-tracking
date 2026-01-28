@@ -102,6 +102,22 @@ DATABASE_URL="postgresql://user:password@host:5432/db" RELEASE_PERCENTAGE=65 mak
 
 The container automatically runs `prisma db push` on startup to apply the database schema.
 
+**Demo environment with podman-compose:**
+
+A complete demo environment with PostgreSQL and optional Mina node is available in the `demo/` directory:
+
+```bash
+cd demo
+
+# Start tracker with postgres
+podman-compose up -d
+
+# Or include a Mina daemon that submits stats
+podman-compose --profile with-mina up -d
+```
+
+See [demo/README.md](demo/README.md) for full instructions.
+
 **Available image tags:**
 | Tag Pattern | Description |
 |-------------|-------------|
