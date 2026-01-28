@@ -50,8 +50,8 @@ services:
       - -c
       - |
         mina daemon --simplified-node-stats false \
-                    --node-status-url=http://hardfork-tracker:3000/submit/stats \
-                    --peer-list-url=${MINA_PEER_LIST_URL:-https://bootnodes.minaprotocol.com/networks/devnet.txt}
+                    --node-status-url http://hardfork-tracker:3000/submit/stats \
+                    --peer-list-url ${MINA_PEER_LIST_URL:-https://bootnodes.minaprotocol.com/networks/devnet.txt}
     depends_on:
       hardfork-tracker:
         condition: service_started
