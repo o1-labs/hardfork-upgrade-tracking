@@ -1,0 +1,34 @@
+# Dependencies
+node_modules
+
+# Build outputs (rebuilt in container)
+dist
+src/generated
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+
+# GitHub
+.github
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Documentation
+*.md
+
+# Build tools
+Makefile
+
+# Logs
+*.log
+npm-debug.log*
