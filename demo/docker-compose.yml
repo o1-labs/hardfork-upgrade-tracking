@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: hardfork
+      POSTGRES_PASSWORD: hardfork
+      POSTGRES_DB: hardfork_tracking
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hardfork -d hardfork_tracking"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1"
+
+  hardfork-tracker:
+    image: ${TRACKER_IMAGE:-hardfork-tracker:local}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://hardfork:hardfork@postgres:5432/hardfork_tracking}
+      RELEASE_PERCENTAGE: ${RELEASE_PERCENTAGE:-65}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1"
+
+  mina-daemon:
+    image: ${MINA_IMAGE:-europe-west3-docker.pkg.dev/o1labs-192920/euro-docker-repo/mina-daemon:3.3.0-compatible-fed840d-noble-devnet}
+    platform: ${MINA_PLATFORM:-linux/amd64}
+    profiles:
+      - with-mina
+    entrypoint:
+      - /usr/bin/env
+      - bash
+      - -c
+      - |
+        mina daemon --simplified-node-stats false \
+                    --node-status-url http://hardfork-tracker:3000/submit/stats \
+                    --peer-list-url ${MINA_PEER_LIST_URL:-https://bootnodes.minaprotocol.com/networks/devnet.txt}
+    depends_on:
+      hardfork-tracker:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: "4"
+
+volumes:
+  postgres_data:
