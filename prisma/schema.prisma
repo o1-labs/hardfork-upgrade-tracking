@@ -21,3 +21,27 @@ model NodeStats {
 
   @@map("node_stats")
 }
+
+model BlockProducer {
+  id                      Int      @id @default(autoincrement())
+  publicKey               String   @unique @map("public_key")
+  totalStake              Float    @map("total_stake")
+  numDelegators           Int      @map("num_delegators")
+  isActive                Boolean  @map("is_active")
+  percentTotalStake       Float    @map("percent_total_stake")
+  percentTotalActiveStake Float?   @map("percent_total_active_stake")
+  upgraded                Boolean  @default(false)
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  @@map("block_producers")
+}
+
+model SyncMetadata {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("sync_metadata")
+}

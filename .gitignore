@@ -3,5 +3,6 @@ dist/
 .env
 *.log
 .DS_Store
+.idea/
 
 /src/generated/prisma
