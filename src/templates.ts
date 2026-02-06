@@ -1,22 +1,79 @@
 import { NodeStats } from './types/node-stats';
 
-export function renderDashboard(stats: NodeStats[], releasePercentage: number): string {
+export interface EnrichedNodeStats extends NodeStats {
+  total_stake: number | null;
+  num_delegators: number | null;
+  percent_total_stake: number | null;
+  percent_total_active_stake: number | null;
+  is_active: boolean | null;
+}
+
+export interface StakeStats {
+  upgradedActiveStakePercent: number;
+  totalActiveStakePercent: number;
+  upgradedTotalStakePercent: number;
+  lastSync: string | null;
+}
+
+function truncateMiddle(str: string, startChars: number = 8, endChars: number = 6): string {
+  if (!str || str.length <= startChars + endChars + 3) return str;
+  return `${str.slice(0, startChars)}...${str.slice(-endChars)}`;
+}
+
+function formatStake(stake: number | null): string {
+  if (stake === null) return '-';
+  if (stake >= 1e9) return (stake / 1e9).toFixed(2) + 'B';
+  if (stake >= 1e6) return (stake / 1e6).toFixed(2) + 'M';
+  if (stake >= 1e3) return (stake / 1e3).toFixed(2) + 'K';
+  return stake.toFixed(2);
+}
+
+function formatPercent(pct: number | null): string {
+  if (pct === null) return '-';
+  return (pct * 100).toFixed(2) + '%';
+}
+
+export function renderDashboard(stats: EnrichedNodeStats[], releasePercentage: number, stakeStats: StakeStats): string {
   const total = stats.length;
   const upgradedCount = stats.filter(s => s.upgraded).length;
   const pendingCount = total - upgradedCount;
   const percentage = total > 0 ? Math.round((upgradedCount / total) * 100) : 0;
+  const stakePercentage = (stakeStats.upgradedActiveStakePercent * 100).toFixed(2);
+  const totalStakePercentage = (stakeStats.upgradedTotalStakePercent * 100).toFixed(2);
 
   const rows = stats.map((s, i) => {
     const upgraded = s.upgraded;
+    const bpKey = s.block_producer_public_key;
     return `
     <tr data-upgraded="${upgraded}" style="animation-delay: ${i * 0.03}s">
-      <td class="key">${s.peer_id}</td>
+      <td class="key">
+        <span class="copyable" data-full="${s.peer_id}" title="${s.peer_id}">
+          ${truncateMiddle(s.peer_id, 8, 4)}
+          <button class="copy-btn" onclick="copyToClipboard('${s.peer_id}', this)">
+            <span class="material-icons-outlined">content_copy</span>
+          </button>
+        </span>
+      </td>
       <td class="mono">${s.commit_hash.substring(0, 8)}</td>
       <td class="mono">${s.max_observed_block_height.toLocaleString()}</td>
       <td class="mono">${s.peer_count}</td>
-      <td class="mono">${s.block_producer_public_key || '-'}</td>
-      <td class="timestamp">${new Date(s.timestamp).toLocaleString()}</td>
-      <td><span class="badge ${upgraded ? 'badge-success' : 'badge-danger'}">${upgraded ? 'Upgraded' : 'Pending'}</span></td>
+      <td class="mono">
+        ${bpKey ? `
+          <span class="copyable" data-full="${bpKey}" title="${bpKey}">
+            ${truncateMiddle(bpKey, 8, 6)}
+            <button class="copy-btn" onclick="copyToClipboard('${bpKey}', this)">
+              <span class="material-icons-outlined">content_copy</span>
+            </button>
+          </span>
+        ` : '-'}
+      </td>
+      <td class="mono">${formatStake(s.total_stake)}</td>
+      <td class="mono">${s.num_delegators ?? '-'}</td>
+      <td class="mono">${formatPercent(s.percent_total_stake)}</td>
+      <td class="mono">${formatPercent(s.percent_total_active_stake)}</td>
+      <td class="mono">${s.is_active === null ? '-' : (s.is_active ? 'Yes' : 'No')}</td>
+      <td class="timestamp">${new Date(s.timestamp).toISOString().replace('T', ' ').slice(0, 19)} UTC</td>
+      <td><span class="badge ${upgraded ? 'badge-success' : 'badge-danger'}">${upgraded ? 'Upgraded' : 'Not Upgraded'}</span></td>
     </tr>
   `;
   }).join('');
@@ -319,7 +376,7 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
     /* Stats Grid */
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 20px;
     }
 
@@ -329,19 +386,19 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
       gap: 20px;
     }
 
+    .last-sync {
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      text-align: right;
+    }
+
     .stat-card {
       background: rgba(26, 26, 46, 0.7);
       backdrop-filter: blur(10px);
       border-radius: 16px;
       border: 1px solid var(--border);
       padding: 24px;
-      transition: all 0.3s ease;
-    }
-
-    .stat-card:hover {
-      transform: translateY(-4px);
-      border-color: var(--primary);
-      box-shadow: 0 20px 40px rgba(83, 98, 201, 0.15);
     }
 
     .stat-card .icon {
@@ -364,6 +421,8 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
     .stat-card.danger .icon .material-icons-outlined { color: var(--danger); }
     .stat-card.primary .icon { background: var(--primary-light); }
     .stat-card.primary .icon .material-icons-outlined { color: var(--primary); }
+    .stat-card.muted .icon { background: rgba(148, 163, 184, 0.1); }
+    .stat-card.muted .icon .material-icons-outlined { color: var(--text-muted); }
 
     .stat-card .label {
       font-size: 14px;
@@ -380,6 +439,7 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
     .stat-card.success .value { color: var(--success); }
     .stat-card.danger .value { color: var(--danger); }
     .stat-card.primary .value { color: var(--primary); }
+    .stat-card.muted .value { color: var(--text-muted); }
 
     .stat-card .subvalue {
       font-size: 13px;
@@ -432,9 +492,18 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
       color: var(--text-muted);
     }
 
-    select {
-      padding: 14px 40px 14px 16px;
-      background-color: rgba(26, 26, 46, 0.7);
+    /* Custom Dropdown */
+    .custom-select {
+      position: relative;
+      min-width: 180px;
+    }
+
+    .custom-select-trigger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      background: rgba(26, 26, 46, 0.7);
       backdrop-filter: blur(10px);
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -442,17 +511,87 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
       color: var(--text);
       font-family: inherit;
       cursor: pointer;
-      appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 12px center;
-      background-size: 18px;
       transition: all 0.2s ease;
     }
 
-    select:focus {
-      outline: none;
+    .custom-select-trigger:hover {
       border-color: var(--primary);
+    }
+
+    .custom-select.open .custom-select-trigger {
+      border-color: var(--primary);
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+
+    .custom-select-trigger .arrow {
+      transition: transform 0.2s ease;
+    }
+
+    .custom-select.open .custom-select-trigger .arrow {
+      transform: rotate(180deg);
+    }
+
+    .custom-select-options {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: rgba(26, 26, 46, 0.95);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--primary);
+      border-top: none;
+      border-bottom-left-radius: 12px;
+      border-bottom-right-radius: 12px;
+      overflow: hidden;
+      z-index: 100;
+      display: none;
+    }
+
+    .custom-select.open .custom-select-options {
+      display: block;
+    }
+
+    .custom-select-option {
+      padding: 12px 16px;
+      font-size: 15px;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .custom-select-option:hover {
+      background: var(--primary-light);
+    }
+
+    .custom-select-option.selected {
+      background: var(--primary-light);
+      color: var(--mina-cyan);
+    }
+
+    .custom-select-option .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .custom-select-option[data-value="all"] .dot {
+      background: var(--primary);
+    }
+
+    .custom-select-option[data-value="upgraded"] .dot {
+      background: var(--success);
+    }
+
+    .custom-select-option[data-value="pending"] .dot {
+      background: var(--danger);
+    }
+
+    select {
+      display: none;
     }
 
     .table-wrapper {
@@ -460,7 +599,32 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
       backdrop-filter: blur(10px);
       border-radius: 16px;
       border: 1px solid var(--border);
-      overflow: hidden;
+      overflow-x: auto;
+    }
+
+    /* Custom Scrollbar */
+    .table-wrapper::-webkit-scrollbar {
+      height: 8px;
+    }
+
+    .table-wrapper::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 4px;
+    }
+
+    .table-wrapper::-webkit-scrollbar-thumb {
+      background: var(--primary);
+      border-radius: 4px;
+    }
+
+    .table-wrapper::-webkit-scrollbar-thumb:hover {
+      background: var(--mina-cyan);
+    }
+
+    /* Firefox scrollbar */
+    .table-wrapper {
+      scrollbar-width: thin;
+      scrollbar-color: var(--primary) rgba(255, 255, 255, 0.05);
     }
 
     table {
@@ -478,6 +642,7 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
       letter-spacing: 0.5px;
       background: rgba(255,255,255,0.02);
       border-bottom: 1px solid var(--border);
+      white-space: nowrap;
     }
 
     td {
@@ -548,7 +713,46 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
       background: currentColor;
     }
 
+    .copyable {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .copy-btn {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.5;
+      transition: all 0.2s ease;
+    }
+
+    .copy-btn:hover {
+      opacity: 1;
+      background: var(--primary-light);
+    }
+
+    .copy-btn .material-icons-outlined {
+      font-size: 16px;
+      color: var(--text-muted);
+    }
+
+    .copy-btn.copied .material-icons-outlined {
+      color: var(--success);
+    }
+
     tr.hidden { display: none; }
+
+    @media (max-width: 1400px) {
+      .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
 
     @media (max-width: 1024px) {
       .dashboard-grid {
@@ -561,9 +765,10 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
       }
       .header-stats {
         justify-content: center;
+        flex-wrap: wrap;
       }
       .stats-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, 1fr);
       }
       .adoption-header {
         flex-direction: column;
@@ -572,6 +777,12 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
       }
       .adoption-title {
         justify-content: center;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .stats-grid {
+        grid-template-columns: 1fr;
       }
     }
   </style>
@@ -588,11 +799,15 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
       </div>
       <div class="header-stats">
         <div class="header-stat">
+          <div class="label">Upgraded Stake</div>
+          <div class="value success">${stakePercentage}%</div>
+        </div>
+        <div class="header-stat">
           <div class="label">Upgraded</div>
           <div class="value success">${upgradedCount}</div>
         </div>
         <div class="header-stat">
-          <div class="label">Pending</div>
+          <div class="label">Not Upgraded</div>
           <div class="value danger">${pendingCount}</div>
         </div>
         <div class="header-stat">
@@ -621,22 +836,22 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
             <div class="adoption-header">
               <div class="adoption-title">
                 <span class="material-icons-outlined">trending_up</span>
-                <h2>Network Adoption</h2>
+                <h2>Active Stake Adoption</h2>
               </div>
-              <div class="adoption-percentage">${percentage}%</div>
+              <div class="adoption-percentage">${stakePercentage}%</div>
             </div>
             <div class="adoption-bar">
-              <div class="adoption-bar-fill" style="width: ${percentage}%"></div>
+              <div class="adoption-bar-fill" style="width: ${stakePercentage}%"></div>
               <div class="release-marker" style="left: ${releasePercentage}%" data-percentage="${releasePercentage}%"></div>
             </div>
             <div class="adoption-stats">
               <div class="adoption-stat">
                 <span class="dot success"></span>
-                <span>${upgradedCount} upgraded</span>
+                <span>${upgradedCount} nodes upgraded</span>
               </div>
               <div class="adoption-stat">
                 <span class="dot danger"></span>
-                <span>${pendingCount} pending</span>
+                <span>${pendingCount} nodes not upgraded</span>
               </div>
             </div>
           </div>
@@ -644,6 +859,20 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
 
         <!-- Stats Cards -->
         <div class="stats-grid">
+          <div class="stat-card success">
+            <div class="icon">
+              <span class="material-icons-outlined">savings</span>
+            </div>
+            <div class="label">Upgraded Active Stake</div>
+            <div class="value">${stakePercentage}%</div>
+          </div>
+          <div class="stat-card muted">
+            <div class="icon">
+              <span class="material-icons-outlined">account_balance</span>
+            </div>
+            <div class="label">Upgraded Total Stake</div>
+            <div class="value">${totalStakePercentage}%</div>
+          </div>
           <div class="stat-card success">
             <div class="icon">
               <span class="material-icons-outlined">check_circle</span>
@@ -655,7 +884,7 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
             <div class="icon">
               <span class="material-icons-outlined">schedule</span>
             </div>
-            <div class="label">Pending Nodes</div>
+            <div class="label">Not Upgraded Nodes</div>
             <div class="value">${pendingCount}</div>
           </div>
           <div class="stat-card primary">
@@ -666,6 +895,7 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
             <div class="value">${total}</div>
           </div>
         </div>
+        ${stakeStats.lastSync ? `<div class="last-sync">Last CSV sync: ${new Date(stakeStats.lastSync).toISOString().replace('T', ' ').slice(0, 19)} UTC</div>` : ''}
       </div>
     </div>
 
@@ -674,10 +904,30 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
         <span class="material-icons-outlined">search</span>
         <input type="text" id="search" placeholder="Search by peer ID or public key...">
       </div>
-      <select id="filter">
+      <div class="custom-select" id="filterWrapper">
+        <div class="custom-select-trigger" id="filterTrigger">
+          <span>All Nodes</span>
+          <span class="material-icons-outlined arrow">expand_more</span>
+        </div>
+        <div class="custom-select-options">
+          <div class="custom-select-option selected" data-value="all">
+            <span class="dot"></span>
+            <span>All Nodes</span>
+          </div>
+          <div class="custom-select-option" data-value="upgraded">
+            <span class="dot"></span>
+            <span>Upgraded Only</span>
+          </div>
+          <div class="custom-select-option" data-value="pending">
+            <span class="dot"></span>
+            <span>Not Upgraded Only</span>
+          </div>
+        </div>
+      </div>
+      <select id="filter" style="display:none">
         <option value="all">All Nodes</option>
         <option value="upgraded">Upgraded Only</option>
-        <option value="pending">Pending Only</option>
+        <option value="pending">Not Upgraded Only</option>
       </select>
     </div>
 
@@ -690,6 +940,11 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
             <th>Block Height</th>
             <th>Peers</th>
             <th>Block Producer Key</th>
+            <th>Total Stake</th>
+            <th>Delegators</th>
+            <th>% Total Stake</th>
+            <th>% Active Stake</th>
+            <th>Active</th>
             <th>Timestamp</th>
             <th>Status</th>
           </tr>
@@ -706,7 +961,7 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
     new Chart(ctx, {
       type: 'doughnut',
       data: {
-        labels: ['Upgraded', 'Pending'],
+        labels: ['Upgraded', 'Not Upgraded'],
         datasets: [{
           data: [${upgradedCount}, ${pendingCount}],
           backgroundColor: ['#AFF4F8', '#FF603B'],
@@ -757,6 +1012,52 @@ export function renderDashboard(stats: NodeStats[], releasePercentage: number): 
 
     searchInput.addEventListener('input', applyFilters);
     filterSelect.addEventListener('change', applyFilters);
+
+    // Custom dropdown handling
+    const customSelect = document.getElementById('filterWrapper');
+    const customTrigger = document.getElementById('filterTrigger');
+    const customOptions = customSelect.querySelectorAll('.custom-select-option');
+
+    customTrigger.addEventListener('click', () => {
+      customSelect.classList.toggle('open');
+    });
+
+    customOptions.forEach(option => {
+      option.addEventListener('click', () => {
+        const value = option.dataset.value;
+        const text = option.querySelector('span:last-child').textContent;
+
+        // Update trigger text
+        customTrigger.querySelector('span:first-child').textContent = text;
+
+        // Update selected state
+        customOptions.forEach(o => o.classList.remove('selected'));
+        option.classList.add('selected');
+
+        // Update hidden select and trigger filter
+        filterSelect.value = value;
+        customSelect.classList.remove('open');
+        applyFilters();
+      });
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!customSelect.contains(e.target)) {
+        customSelect.classList.remove('open');
+      }
+    });
+
+    function copyToClipboard(text, btn) {
+      navigator.clipboard.writeText(text).then(() => {
+        btn.classList.add('copied');
+        btn.querySelector('.material-icons-outlined').textContent = 'check';
+        setTimeout(() => {
+          btn.classList.remove('copied');
+          btn.querySelector('.material-icons-outlined').textContent = 'content_copy';
+        }, 2000);
+      });
+    }
   </script>
 </body>
 </html>`;

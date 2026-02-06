@@ -6,8 +6,18 @@ import { isUpgraded } from '../utils/upgrade-check';
 export const statsRepository = {
   async save(stats: NodeStats): Promise<void> {
     const upgraded = await isUpgraded(stats);
-    await prisma.nodeStats.create({
-      data: {
+    await prisma.nodeStats.upsert({
+      where: { peerId: stats.peer_id },
+      update: {
+        maxObservedBlockHeight: stats.max_observed_block_height,
+        commitHash: stats.commit_hash,
+        chainId: stats.chain_id,
+        peerCount: stats.peer_count,
+        timestamp: new Date(stats.timestamp),
+        blockProducerPublicKey: stats.block_producer_public_key,
+        upgraded,
+      },
+      create: {
         maxObservedBlockHeight: stats.max_observed_block_height,
         commitHash: stats.commit_hash,
         chainId: stats.chain_id,
@@ -37,9 +47,8 @@ export const statsRepository = {
   },
 
   async findByPeerId(peerId: string): Promise<NodeStats | null> {
-    const record = await prisma.nodeStats.findFirst({
+    const record = await prisma.nodeStats.findUnique({
       where: { peerId },
-      orderBy: { createdAt: 'desc' },
     });
     if (!record) return null;
     return {
