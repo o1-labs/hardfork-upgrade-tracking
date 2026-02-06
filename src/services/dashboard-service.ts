@@ -24,20 +24,37 @@ export const dashboardService = {
       };
     });
 
-    // Calculate stake stats
-    const upgradedActiveNodes = enrichedStats.filter(s => s.upgraded && s.is_active);
-    const allActiveNodes = enrichedStats.filter(s => s.is_active);
-    const upgradedNodes = enrichedStats.filter(s => s.upgraded);
+    // Calculate stake stats - deduplicate by block producer key to avoid counting same BP twice
+    const seenUpgradedActiveBPs = new Set<string>();
+    const seenAllActiveBPs = new Set<string>();
+    const seenUpgradedBPs = new Set<string>();
 
-    const upgradedActiveStake = upgradedActiveNodes.reduce(
-      (sum, s) => sum + (s.percent_total_active_stake || 0), 0
-    );
-    const totalActiveStake = allActiveNodes.reduce(
-      (sum, s) => sum + (s.percent_total_active_stake || 0), 0
-    );
-    const upgradedTotalStake = upgradedNodes.reduce(
-      (sum, s) => sum + (s.percent_total_stake || 0), 0
-    );
+    let upgradedActiveStake = 0;
+    let totalActiveStake = 0;
+    let upgradedTotalStake = 0;
+
+    for (const s of enrichedStats) {
+      const bpKey = s.block_producer_public_key;
+      if (!bpKey) continue;
+
+      // Count upgraded active stake (unique BPs only)
+      if (s.upgraded && s.is_active && !seenUpgradedActiveBPs.has(bpKey)) {
+        seenUpgradedActiveBPs.add(bpKey);
+        upgradedActiveStake += s.percent_total_active_stake || 0;
+      }
+
+      // Count total active stake (unique BPs only)
+      if (s.is_active && !seenAllActiveBPs.has(bpKey)) {
+        seenAllActiveBPs.add(bpKey);
+        totalActiveStake += s.percent_total_active_stake || 0;
+      }
+
+      // Count upgraded total stake (unique BPs only)
+      if (s.upgraded && !seenUpgradedBPs.has(bpKey)) {
+        seenUpgradedBPs.add(bpKey);
+        upgradedTotalStake += s.percent_total_stake || 0;
+      }
+    }
 
     const stakeStats: StakeStats = {
       upgradedActiveStakePercent: upgradedActiveStake,
