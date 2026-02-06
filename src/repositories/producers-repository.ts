@@ -1,20 +1,19 @@
-import { BlockProducer } from '../types/block-producer';
-import { blockProducers } from '../data/block-producers';
+import { blockProducerRepository } from './block-producer-repository';
 
 export const producersRepository = {
-  findAll(): BlockProducer[] {
-    return blockProducers;
+  findAll() {
+    return blockProducerRepository.findAll();
   },
 
-  findByPublicKey(publicKey: string): BlockProducer | undefined {
-    return blockProducers.find(p => p.block_producer_public_key === publicKey);
+  findByPublicKey(publicKey: string) {
+    return blockProducerRepository.findByPublicKey(publicKey);
   },
 
-  findUpgraded(): BlockProducer[] {
-    return blockProducers.filter(p => p.upgraded);
+  findUpgraded() {
+    return blockProducerRepository.findUpgraded();
   },
 
-  findPending(): BlockProducer[] {
-    return blockProducers.filter(p => !p.upgraded);
+  findPending() {
+    return blockProducerRepository.findPending();
   },
 };

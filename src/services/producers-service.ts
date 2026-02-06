@@ -2,36 +2,46 @@ import { BlockProducer } from '../types/block-producer';
 import { producersRepository } from '../repositories/producers-repository';
 
 export const producersService = {
-  getAll(): BlockProducer[] {
+  async getAll(): Promise<BlockProducer[]> {
     return producersRepository.findAll();
   },
 
-  getByPublicKey(publicKey: string): BlockProducer | undefined {
+  async getByPublicKey(publicKey: string): Promise<BlockProducer | null> {
     return producersRepository.findByPublicKey(publicKey);
   },
 
-  getUpgraded(): BlockProducer[] {
+  async getUpgraded(): Promise<BlockProducer[]> {
     return producersRepository.findUpgraded();
   },
 
-  getPending(): BlockProducer[] {
+  async getPending(): Promise<BlockProducer[]> {
     return producersRepository.findPending();
   },
 
-  getStats() {
-    const all = producersRepository.findAll();
-    const upgraded = producersRepository.findUpgraded();
-    const totalStake = all.reduce((sum, p) => sum + p.stake, 0);
-    const upgradedStake = upgraded.reduce((sum, p) => sum + p.stake, 0);
+  async getStats() {
+    const all = await producersRepository.findAll();
+    const upgraded = await producersRepository.findUpgraded();
+
+    const activeProducers = all.filter(p => p.is_active);
+    const upgradedActive = upgraded.filter(p => p.is_active);
+
+    const totalActiveStake = activeProducers.reduce(
+      (sum, p) => sum + (p.percent_total_active_stake || 0),
+      0
+    );
+    const upgradedActiveStake = upgradedActive.reduce(
+      (sum, p) => sum + (p.percent_total_active_stake || 0),
+      0
+    );
 
     return {
       total: all.length,
       upgraded: upgraded.length,
       pending: all.length - upgraded.length,
-      percentage: Math.round((upgraded.length / all.length) * 100),
-      totalStake,
-      upgradedStake,
-      stakePercentage: Math.round((upgradedStake / totalStake) * 100),
+      percentage: all.length > 0 ? Math.round((upgraded.length / all.length) * 100) : 0,
+      totalActiveStake,
+      upgradedActiveStake,
+      stakePercentage: totalActiveStake > 0 ? Math.round((upgradedActiveStake / totalActiveStake) * 100) : 0,
     };
   },
 };
