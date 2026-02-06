@@ -12,12 +12,13 @@ model NodeStats {
   maxObservedBlockHeight   Int      @map("max_observed_block_height")
   commitHash               String   @map("commit_hash")
   chainId                  String   @map("chain_id")
-  peerId                   String   @map("peer_id")
+  peerId                   String   @unique @map("peer_id")
   peerCount                Int      @map("peer_count")
   timestamp                DateTime
   blockProducerPublicKey   String?  @map("block_producer_public_key")
   upgraded                 Boolean  @default(false)
   createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("node_stats")
 }
