@@ -1,5 +1,6 @@
 import { prisma } from '../db';
 import { BlockProducer } from '../types/block-producer';
+import { BlockProducer as PrismaBlockProducer } from '../generated/prisma/client';
 
 interface CSVBlockProducer {
   public_key: string;
@@ -112,7 +113,7 @@ export const blockProducerRepository = {
     const records = await prisma.blockProducer.findMany({
       orderBy: { percentTotalStake: 'desc' },
     });
-    return records.map((r) => ({
+    return records.map((r: PrismaBlockProducer) => ({
       public_key: r.publicKey,
       total_stake: r.totalStake,
       num_delegators: r.numDelegators,
@@ -144,7 +145,7 @@ export const blockProducerRepository = {
       where: { upgraded: true },
       orderBy: { percentTotalStake: 'desc' },
     });
-    return records.map((r) => ({
+    return records.map((r: PrismaBlockProducer) => ({
       public_key: r.publicKey,
       total_stake: r.totalStake,
       num_delegators: r.numDelegators,
@@ -160,7 +161,7 @@ export const blockProducerRepository = {
       where: { upgraded: false },
       orderBy: { percentTotalStake: 'desc' },
     });
-    return records.map((r) => ({
+    return records.map((r: PrismaBlockProducer) => ({
       public_key: r.publicKey,
       total_stake: r.totalStake,
       num_delegators: r.numDelegators,

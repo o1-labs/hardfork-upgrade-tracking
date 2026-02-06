@@ -51,6 +51,6 @@ export const validCommitRepository = {
     const records = await prisma.validCommit.findMany({
       select: { hash: true },
     });
-    return new Set(records.map((r) => r.hash));
+    return new Set(records.map((r: { hash: string }) => r.hash));
   },
 };
