@@ -5,7 +5,7 @@ import { isUpgraded } from '../utils/upgrade-check';
 
 export const statsRepository = {
   async save(stats: NodeStats): Promise<void> {
-    const upgraded = isUpgraded(stats);
+    const upgraded = await isUpgraded(stats);
     await prisma.nodeStats.create({
       data: {
         maxObservedBlockHeight: stats.max_observed_block_height,
