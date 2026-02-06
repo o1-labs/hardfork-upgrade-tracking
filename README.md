@@ -2,6 +2,23 @@
 
 This project provides a simple server to track the upgrade status of nodes in a network. It exposes a web-based dashboard to visualize the upgrade progress and an API for nodes to submit their status.
 
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Setup](#1-setup)
+- [Running the Project](#2-running-the-project)
+  - [Development Mode](#development-mode)
+  - [Production (Node.js)](#production-nodejs)
+  - [Production (Docker)](#production-docker)
+- [Viewing the UI](#3-viewing-the-ui)
+- [API Reference](#4-api-reference)
+  - [Dashboard](#dashboard)
+  - [Node Stats](#node-stats)
+  - [Block Producers](#block-producers)
+  - [Valid Commits](#valid-commits)
+- [Authentication](#5-authentication)
+- [Testing](#6-testing)
+
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) (v18 or newer)
@@ -40,7 +57,7 @@ This project provides a simple server to track the upgrade status of nodes in a 
     ```bash
     npx prisma db push
     ```
-    
+
     Alternatively, you can use migrations:
     ```bash
     npx prisma migrate dev
@@ -118,33 +135,39 @@ podman-compose --profile with-mina up -d
 
 See [demo/README.md](demo/README.md) for full instructions.
 
-**Available image tags:**
-| Tag Pattern | Description |
-|-------------|-------------|
-| `latest` | Latest release (from git tags) |
-| `v1.0.0` | Specific release version |
-| `1.0.0-abc1234` | Push to master (version + commit SHA) |
-| `pr-123-abc1234` | Pull request build (PR number + commit SHA) |
-
 ## 3. Viewing the UI
 
 Once the server is running, you can view the dashboard by opening your web browser and navigating to:
 
 [http://localhost:3000/](http://localhost:3000/)
 
-The dashboard displays the current upgrade progress of the network.
+The dashboard displays the current upgrade progress of the network, including:
+- Percentage of active stake that has upgraded
+- Total number of upgraded vs non-upgraded nodes
+- Block producer upgrade status with stake percentages
+- Export functionality to download data as CSV
 
-## 4. Submitting Data
+## 4. API Reference
 
-Nodes can submit their status by sending a `POST` request to the `/submit/stats` endpoint.
+### Dashboard
 
-### Endpoint
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/` | No | HTML dashboard |
 
-`POST /submit/stats`
+### Node Stats
 
-### Request Body
+Nodes submit their status to track upgrade progress across the network.
 
-The request body must be a JSON object with the following structure:
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/submit/stats` | No | Submit node stats |
+| `GET` | `/submit/stats` | No | Get all node stats |
+| `GET` | `/submit/stats/:peerId` | No | Get stats for a specific peer |
+
+#### Submit Node Stats
+
+**Request Body:**
 
 ```json
 {
@@ -157,76 +180,65 @@ The request body must be a JSON object with the following structure:
   "block_producer_public_key": "B62q..."
 }
 ```
-### Example `curl` command
+
+**Example:**
 
 ```bash
 curl -X POST http://localhost:3000/submit/stats \
--H "Content-Type: application/json" \
--d '{
-  "max_observed_block_height": 8392,
-  "commit_hash": "a1b2c3d4",
-  "chain_id": "mainnet",
-  "peer_id": "12D3KooWL7tVWT3LpBDv3p5bLNKm2w5V51s1A4Q4Zg4Q4Yq4b4Q4",
-  "peer_count": 10,
-  "timestamp": "2026-01-26T10:00:00.000Z",
-  "block_producer_public_key": "B62qrPN5Y5yq8kGE3FbVKbGTdTAJNdtNtS5sKqLYxhYGDzuDv2VRvgH"
-}'
-
-```
-
-### Other API Endpoints
-- `GET /submit/stats`: gets all stats
-- `GET /submit/stats/:peerId`: gets stats for a specific peer
-
-## 5. Valid Commits
-
-A node is considered "upgraded" if its `commit_hash` matches one of the valid commits in the database. You can manage valid commits via the API.
-
-### Endpoints
-
-| Method | Endpoint | Auth Required | Description |
-|--------|----------|---------------|-------------|
-| `GET` | `/valid-commits` | No | List all valid commits |
-| `POST` | `/valid-commits` | Yes | Add commit(s) |
-| `DELETE` | `/valid-commits/:hash` | Yes | Remove a commit |
-
-### Add a single commit
-
-```bash
-curl -X POST http://localhost:3000/valid-commits \
-  -H "Authorization: Bearer $CSV_UPLOAD_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"hash": "f1e40a7ef71c799b5af8821ff85aadb44f53a377", "label": "3.3.0-compatible"}'
+  -d '{
+    "max_observed_block_height": 8392,
+    "commit_hash": "a1b2c3d4",
+    "chain_id": "mainnet",
+    "peer_id": "12D3KooWL7tVWT3LpBDv3p5bLNKm2w5V51s1A4Q4Zg4Q4Yq4b4Q4",
+    "peer_count": 10,
+    "timestamp": "2026-01-26T10:00:00.000Z",
+    "block_producer_public_key": "B62qrPN5Y5yq8kGE3FbVKbGTdTAJNdtNtS5sKqLYxhYGDzuDv2VRvgH"
+  }'
 ```
 
-### Add multiple commits
+#### Get All Stats
 
 ```bash
-curl -X POST http://localhost:3000/valid-commits \
-  -H "Authorization: Bearer $CSV_UPLOAD_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"commits": [{"hash": "abc123", "label": "v1.0"}, {"hash": "def456"}]}'
+curl http://localhost:3000/submit/stats
 ```
 
-### List valid commits
+#### Get Stats by Peer ID
 
 ```bash
-curl http://localhost:3000/valid-commits
+curl http://localhost:3000/submit/stats/12D3KooWL7tVWT3LpBDv3p5bLNKm2w5V51s1A4Q4Zg4Q4Yq4b4Q4
 ```
 
-## 6. Block Producer CSV Upload
+### Block Producers
 
-Block producer stake data can be uploaded via CSV. This data is used to calculate the percentage of active stake that has upgraded.
+Block producer stake data is used to calculate the percentage of active stake that has upgraded.
 
-### Endpoints
-
-| Method | Endpoint | Auth Required | Description |
-|--------|----------|---------------|-------------|
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
 | `GET` | `/block-producers` | No | List all block producers |
 | `GET` | `/block-producers/last-sync` | No | Get last CSV sync timestamp |
+| `GET` | `/block-producers/:publicKey` | No | Get a specific block producer |
 | `POST` | `/block-producers/upload` | Yes | Upload CSV data |
 
-### CSV Format
+#### List All Block Producers
+
+```bash
+curl http://localhost:3000/block-producers
+```
+
+#### Get Last Sync Time
+
+```bash
+curl http://localhost:3000/block-producers/last-sync
+```
+
+#### Get Block Producer by Public Key
+
+```bash
+curl http://localhost:3000/block-producers/B62qrQKS9ghd91shs73TCmBJRW9GzvTJK443DPx2YbqcyoLc56g1ny9
+```
+
+#### Upload CSV
 
 The CSV must have the following columns:
 - `bp_public_key` - Block producer public key (B62...)
@@ -236,8 +248,6 @@ The CSV must have the following columns:
 - `percent_total_stake` - Percentage of total stake
 - `percent_total_active_stake` - Percentage of active stake
 
-### Upload CSV
-
 ```bash
 curl -X POST http://localhost:3000/block-producers/upload \
   -H "Authorization: Bearer $CSV_UPLOAD_TOKEN" \
@@ -245,7 +255,48 @@ curl -X POST http://localhost:3000/block-producers/upload \
   --data-binary @block_producers.csv
 ```
 
-## 7. Authentication
+### Valid Commits
+
+A node is considered "upgraded" if its `commit_hash` matches one of the valid commits in the database.
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/valid-commits` | No | List all valid commits |
+| `POST` | `/valid-commits` | Yes | Add commit(s) |
+| `DELETE` | `/valid-commits/:hash` | Yes | Remove a commit |
+
+#### List Valid Commits
+
+```bash
+curl http://localhost:3000/valid-commits
+```
+
+#### Add a Single Commit
+
+```bash
+curl -X POST http://localhost:3000/valid-commits \
+  -H "Authorization: Bearer $CSV_UPLOAD_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"hash": "f1e40a7ef71c799b5af8821ff85aadb44f53a377", "label": "3.3.0-compatible"}'
+```
+
+#### Add Multiple Commits
+
+```bash
+curl -X POST http://localhost:3000/valid-commits \
+  -H "Authorization: Bearer $CSV_UPLOAD_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"commits": [{"hash": "abc123", "label": "v1.0"}, {"hash": "def456"}]}'
+```
+
+#### Delete a Commit
+
+```bash
+curl -X DELETE http://localhost:3000/valid-commits/abc123 \
+  -H "Authorization: Bearer $CSV_UPLOAD_TOKEN"
+```
+
+## 5. Authentication
 
 Protected endpoints require a bearer token. Set the `CSV_UPLOAD_TOKEN` environment variable:
 
@@ -255,3 +306,19 @@ CSV_UPLOAD_TOKEN="your-secret-token"
 ```
 
 In production, this token should be stored in a secrets manager (e.g., GCP Secret Manager) and injected as an environment variable.
+
+## 6. Testing
+
+Run the test suite:
+
+```bash
+npm test
+```
+
+Tests cover:
+- CSV parsing for block producer data
+- Stake calculation logic with deduplication
+- Upgrade check (commit hash validation)
+- Template helper functions
+
+Tests are automatically run in CI on every pull request and must pass before merging.
