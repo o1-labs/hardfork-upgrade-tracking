@@ -45,3 +45,12 @@ model SyncMetadata {
 
   @@map("sync_metadata")
 }
+
+model ValidCommit {
+  id        Int      @id @default(autoincrement())
+  hash      String   @unique
+  label     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("valid_commits")
+}
