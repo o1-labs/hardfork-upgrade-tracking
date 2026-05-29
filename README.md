@@ -245,8 +245,8 @@ The CSV must have the following columns:
 - `total_stake` - Total stake amount
 - `num_delegators` - Number of delegators
 - `is_active` - Whether BP is active (true/false)
-- `percent_total_stake` - Percentage of total stake
-- `percent_total_active_stake` - Percentage of active stake
+- `percent_total_stake` - Percentage of total stake, on a 0–100 scale (e.g. `12.5` for 12.5%)
+- `percent_total_active_stake` - Percentage of active stake, on a 0–100 scale (e.g. `12.5` for 12.5%)
 
 ```bash
 curl -X POST http://localhost:3000/block-producers/upload \

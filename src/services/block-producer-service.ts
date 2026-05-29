@@ -55,13 +55,16 @@ export const blockProducerService = {
 
       const percentActiveStakeStr = values[colIndex.percent_total_active_stake]?.trim();
 
+      // The CSV expresses stake percentages on a 0-100 scale (the columns sum to ~100),
+      // but everything downstream (stake calc + the *100 rendering in templates) expects
+      // fractions on a 0-1 scale. Normalize here so the dashboard doesn't show e.g. 669%.
       producers.push({
         public_key: publicKey,
         total_stake: parseFloat(values[colIndex.total_stake]) || 0,
         num_delegators: parseInt(values[colIndex.num_delegators], 10) || 0,
         is_active: values[colIndex.is_active]?.trim().toLowerCase() === 'true',
-        percent_total_stake: parseFloat(values[colIndex.percent_total_stake]) || 0,
-        percent_total_active_stake: percentActiveStakeStr ? parseFloat(percentActiveStakeStr) : null,
+        percent_total_stake: (parseFloat(values[colIndex.percent_total_stake]) || 0) / 100,
+        percent_total_active_stake: percentActiveStakeStr ? parseFloat(percentActiveStakeStr) / 100 : null,
       });
     }
 
