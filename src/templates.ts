@@ -56,7 +56,7 @@ export function renderDashboard(stats: EnrichedNodeStats[], releasePercentage: n
         data-timestamp="${new Date(s.timestamp).getTime()}"
         data-commit="${s.commit_hash}"
         data-block_height="${s.max_observed_block_height}"
-        data-peer_count="${s.peer_count}"
+        data-peer_count="${s.peer_count ?? -1}"
         data-peer_id="${s.peer_id}"
 >
       <td><span class="badge ${upgraded ? 'badge-success' : 'badge-danger'}">${upgraded ? 'Upgraded' : 'Not Upgraded'}</span></td>
@@ -78,7 +78,7 @@ export function renderDashboard(stats: EnrichedNodeStats[], releasePercentage: n
       <td class="timestamp"><span class="date">${new Date(s.timestamp).toISOString().slice(0, 10)}</span><span class="time">${new Date(s.timestamp).toISOString().slice(11, 19)} UTC</span></td>
       <td class="mono">${s.commit_hash.substring(0, 8)}</td>
       <td class="mono">${s.max_observed_block_height.toLocaleString()}</td>
-      <td class="mono">${s.peer_count}</td>
+      <td class="mono">${s.peer_count ?? '-'}</td>
       <td class="key">
         <span class="copyable" data-full="${s.peer_id}" title="${s.peer_id}">
           ${truncateMiddle(s.peer_id, 8, 4)}

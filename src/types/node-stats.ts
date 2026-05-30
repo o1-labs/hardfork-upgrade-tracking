@@ -3,7 +3,7 @@ export interface NodeStats {
   commit_hash: string;
   chain_id: string;
   peer_id: string;
-  peer_count: number;
+  peer_count?: number | null;
   timestamp: string;
   block_producer_public_key?: string;
   upgraded?: boolean;
