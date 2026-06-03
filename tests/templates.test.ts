@@ -1,3 +1,95 @@
+import { renderDashboard, BlockProducerRow, StakeStats } from '../src/templates';
+
+function bpRow(overrides: Partial<BlockProducerRow>): BlockProducerRow {
+  return {
+    block_producer_public_key: 'BP1',
+    upgraded: false,
+    total_stake: 1000,
+    num_delegators: 5,
+    percent_total_stake: 0.1,
+    percent_total_active_stake: 0.1,
+    is_active: true,
+    commits: ['commit_a'],
+    timestamp: '2026-01-01T00:00:00.000Z',
+    max_observed_block_height: 100,
+    peer_count: 10,
+    peer_id: 'peer_1',
+    ...overrides,
+  };
+}
+
+const emptyStakeStats: StakeStats = {
+  upgradedActiveStakePercent: 0,
+  totalActiveStakePercent: 0,
+  upgradedTotalStakePercent: 0,
+  lastSync: null,
+};
+
+describe('renderDashboard table', () => {
+  it('renders one <tr> per block producer row', () => {
+    const html = renderDashboard(
+      [bpRow({ block_producer_public_key: 'BP1', peer_id: 'p1' }), bpRow({ block_producer_public_key: 'BP2', peer_id: 'p2' })],
+      80,
+      emptyStakeStats
+    );
+
+    const bodyRows = (html.match(/data-bp_key=/g) || []).length;
+    expect(bodyRows).toBe(2);
+  });
+
+  it('lists comma-separated commits for a collapsed block producer', () => {
+    const html = renderDashboard(
+      [bpRow({ commits: ['aaaaaaaa1111', 'bbbbbbbb2222'] })],
+      80,
+      emptyStakeStats
+    );
+
+    // Cell shows the first 8 chars of each commit, comma-separated.
+    expect(html).toContain('aaaaaaaa, bbbbbbbb');
+    // Full commits are preserved in the data attribute (used by sort/export).
+    expect(html).toContain('data-commit="aaaaaaaa1111, bbbbbbbb2222"');
+  });
+
+  it('caps inline commits at 2 and summarizes the rest with "+N more"', () => {
+    const html = renderDashboard(
+      [bpRow({ commits: ['c1111111aaa', 'c2222222bbb', 'c3333333ccc', 'c4444444ddd', 'c5555555eee'] })],
+      80,
+      emptyStakeStats
+    );
+
+    // First two commits shown as 8-char short hashes...
+    expect(html).toContain('c1111111, c2222222');
+    // ...and the remaining three summarized.
+    expect(html).toContain('+3 more');
+    // The full list stays available for the tooltip, copy, and CSV export.
+    const fullList = 'c1111111aaa, c2222222bbb, c3333333ccc, c4444444ddd, c5555555eee';
+    expect(html).toContain(`data-commits="${fullList}"`);
+    expect(html).toContain(`data-commit="${fullList}"`);
+  });
+
+  it('does not show "+N more" when there are 2 or fewer commits', () => {
+    const html = renderDashboard([bpRow({ commits: ['aaaaaaaa11', 'bbbbbbbb22'] })], 80, emptyStakeStats);
+    expect(html).toContain('aaaaaaaa, bbbbbbbb');
+    expect(html).not.toContain('class="commit-more"');
+  });
+
+  it('counts block producers, not nodes, in the summary cards', () => {
+    const html = renderDashboard(
+      [
+        bpRow({ block_producer_public_key: 'BP1', upgraded: true }),
+        bpRow({ block_producer_public_key: 'BP2', upgraded: false }),
+        bpRow({ block_producer_public_key: 'BP3', upgraded: false }),
+      ],
+      80,
+      emptyStakeStats
+    );
+
+    expect(html).toContain('Total Block Producers');
+    expect(html).toContain('Upgraded Block Producers');
+    expect(html).toContain('Not Upgraded Block Producers');
+  });
+});
+
 // Test template helper functions
 describe('Template helpers', () => {
   // Replicating the helper functions from templates.ts

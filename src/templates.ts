@@ -15,6 +15,26 @@ export interface StakeStats {
   lastSync: string | null;
 }
 
+/**
+ * A single row of the dashboard table: one block producer, with its per-node
+ * records collapsed together (see groupByBlockProducer). `commits` is the
+ * distinct list of commits the BP reported across all its node records.
+ */
+export interface BlockProducerRow {
+  block_producer_public_key: string;
+  upgraded: boolean;
+  total_stake: number | null;
+  num_delegators: number | null;
+  percent_total_stake: number | null;
+  percent_total_active_stake: number | null;
+  is_active: boolean | null;
+  commits: string[];
+  timestamp: string;
+  max_observed_block_height: number;
+  peer_count: number;
+  peer_id: string;
+}
+
 function truncateMiddle(str: string, startChars: number = 8, endChars: number = 6): string {
   if (!str || str.length <= startChars + endChars + 3) return str;
   return `${str.slice(0, startChars)}...${str.slice(-endChars)}`;
@@ -33,17 +53,28 @@ function formatPercent(pct: number | null): string {
   return (pct * 100).toFixed(2) + '%';
 }
 
-export function renderDashboard(stats: EnrichedNodeStats[], releasePercentage: number, stakeStats: StakeStats): string {
-  const total = stats.length;
-  const upgradedCount = stats.filter(s => s.upgraded).length;
+export function renderDashboard(rows: BlockProducerRow[], releasePercentage: number, stakeStats: StakeStats): string {
+  const total = rows.length;
+  const upgradedCount = rows.filter(r => r.upgraded).length;
   const pendingCount = total - upgradedCount;
   const percentage = total > 0 ? Math.round((upgradedCount / total) * 100) : 0;
   const stakePercentage = (stakeStats.upgradedActiveStakePercent * 100).toFixed(2);
   const totalStakePercentage = (stakeStats.upgradedTotalStakePercent * 100).toFixed(2);
 
-  const rows = stats.map((s, i) => {
+  const tableRows = rows.map((s) => {
     const upgraded = s.upgraded;
     const bpKey = s.block_producer_public_key;
+    const commits = s.commits;
+    const commitsFull = commits.join(', ');
+    // Cap how many commits we render inline so a BP with many restarts doesn't
+    // blow out the column width. Hover shows the full list in a tooltip, and
+    // copy/export use the complete comma-separated list (via data-commit).
+    const MAX_VISIBLE_COMMITS = 2;
+    const shownCommits = commits.slice(0, MAX_VISIBLE_COMMITS).map(c => c.substring(0, 8)).join(', ');
+    const extraCommits = commits.length - MAX_VISIBLE_COMMITS;
+    const commitsShort = extraCommits > 0
+      ? `${shownCommits} <span class="commit-more">+${extraCommits} more</span>`
+      : shownCommits;
     return `
     <tr data-upgraded="${upgraded}"
         data-status="${upgraded ? '1' : '0'}"
@@ -54,7 +85,7 @@ export function renderDashboard(stats: EnrichedNodeStats[], releasePercentage: n
         data-delegators="${s.num_delegators ?? -1}"
         data-is_active="${s.is_active === null ? -1 : (s.is_active ? 1 : 0)}"
         data-timestamp="${new Date(s.timestamp).getTime()}"
-        data-commit="${s.commit_hash}"
+        data-commit="${commitsFull}"
         data-block_height="${s.max_observed_block_height}"
         data-peer_count="${s.peer_count}"
         data-peer_id="${s.peer_id}"
@@ -76,7 +107,14 @@ export function renderDashboard(stats: EnrichedNodeStats[], releasePercentage: n
       <td class="mono">${s.num_delegators ?? '-'}</td>
       <td class="mono">${s.is_active === null ? '-' : (s.is_active ? 'Yes' : 'No')}</td>
       <td class="timestamp"><span class="date">${new Date(s.timestamp).toISOString().slice(0, 10)}</span><span class="time">${new Date(s.timestamp).toISOString().slice(11, 19)} UTC</span></td>
-      <td class="mono">${s.commit_hash.substring(0, 8)}</td>
+      <td class="mono commits-cell">
+        <span class="copyable" data-commits="${commitsFull}">
+          <span class="commits-text">${commitsShort}</span>
+          <button class="copy-btn" onclick="copyToClipboard('${commitsFull}', this)">
+            <span class="material-icons-outlined">content_copy</span>
+          </button>
+        </span>
+      </td>
       <td class="mono">${s.max_observed_block_height.toLocaleString()}</td>
       <td class="mono">${s.peer_count}</td>
       <td class="key">
@@ -293,7 +331,9 @@ export function renderDashboard(stats: EnrichedNodeStats[], releasePercentage: n
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 20px;
+      /* Extra clearance so the "Release Target" label that floats above the
+         bar doesn't collide with the large adoption percentage number. */
+      margin-bottom: 48px;
     }
 
     .adoption-title {
@@ -778,6 +818,72 @@ export function renderDashboard(stats: EnrichedNodeStats[], releasePercentage: n
       color: var(--text);
     }
 
+    /* Commit list: keep it on one line; overflow is summarized by "+N more". */
+    .commits-cell {
+      white-space: nowrap;
+    }
+
+    .commit-more {
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    /* Commit tooltip — rendered at body level (not clipped by the table's
+       horizontal scroll) and shown instantly on hover. */
+    .commit-tooltip {
+      position: fixed;
+      display: none;
+      z-index: 1000;
+      min-width: 160px;
+      max-height: 280px;
+      overflow-y: auto;
+      padding: 8px;
+      background: rgba(20, 20, 36, 0.98);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--primary);
+      border-radius: 10px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+      pointer-events: none;
+    }
+
+    .commit-tooltip-header {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      padding: 2px 8px 6px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .commit-tooltip-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .commit-tooltip-row + .commit-tooltip-row {
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .commit-tooltip-idx {
+      min-width: 18px;
+      text-align: center;
+      padding: 1px 0;
+      border-radius: 4px;
+      background: var(--primary-light);
+      color: var(--mina-cyan);
+      font-size: 10px;
+      font-weight: 600;
+    }
+
     .timestamp {
       font-size: 13px;
       color: var(--text-muted);
@@ -858,6 +964,7 @@ export function renderDashboard(stats: EnrichedNodeStats[], releasePercentage: n
 
     tr.hidden { display: none; }
 
+    /* Tablet: collapse the 5-column dashboard grid to 2 columns. */
     @media (max-width: 1024px) {
       .top-row {
         grid-template-columns: 1fr;
@@ -878,6 +985,71 @@ export function renderDashboard(stats: EnrichedNodeStats[], releasePercentage: n
       }
       .adoption-title {
         justify-content: center;
+      }
+
+      .dashboard-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .dashboard-grid .chart-card,
+      .dashboard-grid .adoption-section {
+        grid-column: 1 / -1;
+      }
+      /* Stat cards (display:contents children) now flow 2 per row. */
+
+      /* Controls become their own 2-col grid instead of a 5-col subgrid. */
+      .controls {
+        grid-column: 1 / -1;
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .controls .search-wrapper {
+        grid-column: 1 / -1;
+      }
+    }
+
+    /* Phone: single column, tighter spacing and smaller type. */
+    @media (max-width: 640px) {
+      .container {
+        padding: 0 16px 40px;
+      }
+      .header {
+        padding: 20px 0;
+        margin-bottom: 24px;
+      }
+      .header-content {
+        padding: 0 16px;
+      }
+      /* Hide the header stats on phones — they duplicate the cards and
+         adoption section below. Still shown on desktop/tablet. */
+      .header-stats {
+        display: none;
+      }
+      .adoption-percentage {
+        font-size: 36px;
+      }
+
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }
+      .controls {
+        grid-template-columns: 1fr;
+      }
+
+      .stat-card {
+        padding: 18px;
+      }
+      .stat-card .value {
+        font-size: 22px;
+      }
+      .stat-card .icon {
+        width: 40px;
+        height: 40px;
+        margin-bottom: 12px;
+      }
+
+      th, td {
+        padding: 6px 8px;
+        font-size: 12px;
       }
     }
 
@@ -907,7 +1079,7 @@ export function renderDashboard(stats: EnrichedNodeStats[], releasePercentage: n
           <div class="value danger">${pendingCount}</div>
         </div>
         <div class="header-stat">
-          <div class="label">Total</div>
+          <div class="label">Block Producers</div>
           <div class="value primary">${total}</div>
         </div>
       </div>
@@ -960,21 +1132,21 @@ export function renderDashboard(stats: EnrichedNodeStats[], releasePercentage: n
           <div class="icon">
             <span class="material-icons-outlined">check_circle</span>
           </div>
-          <div class="label">Upgraded Nodes</div>
+          <div class="label">Upgraded Block Producers</div>
           <div class="value">${upgradedCount}</div>
         </div>
         <div class="stat-card danger">
           <div class="icon">
             <span class="material-icons-outlined">schedule</span>
           </div>
-          <div class="label">Not Upgraded Nodes</div>
+          <div class="label">Not Upgraded Block Producers</div>
           <div class="value">${pendingCount}</div>
         </div>
         <div class="stat-card primary">
           <div class="icon">
             <span class="material-icons-outlined">dns</span>
           </div>
-          <div class="label">Total Nodes</div>
+          <div class="label">Total Block Producers</div>
           <div class="value">${total}</div>
         </div>
 
@@ -1028,14 +1200,14 @@ export function renderDashboard(stats: EnrichedNodeStats[], releasePercentage: n
             <th data-sort="delegators">Delegators<span class="sort-icon material-icons-outlined">unfold_more</span></th>
             <th data-sort="is_active">Active<span class="sort-icon material-icons-outlined">unfold_more</span></th>
             <th data-sort="timestamp">Timestamp<span class="sort-icon material-icons-outlined">unfold_more</span></th>
-            <th data-sort="commit">Commit<span class="sort-icon material-icons-outlined">unfold_more</span></th>
+            <th data-sort="commit">Commits<span class="sort-icon material-icons-outlined">unfold_more</span></th>
             <th data-sort="block_height">Block Height<span class="sort-icon material-icons-outlined">unfold_more</span></th>
             <th data-sort="peer_count">Peer Count<span class="sort-icon material-icons-outlined">unfold_more</span></th>
             <th data-sort="peer_id">Peer ID<span class="sort-icon material-icons-outlined">unfold_more</span></th>
           </tr>
         </thead>
         <tbody id="stats-table">
-          ${rows}
+          ${tableRows}
         </tbody>
       </table>
     </div>
@@ -1201,8 +1373,41 @@ export function renderDashboard(stats: EnrichedNodeStats[], releasePercentage: n
       });
     }
 
+    // Commit tooltip: one shared element at body level, shown instantly on hover.
+    const commitTooltip = document.createElement('div');
+    commitTooltip.className = 'commit-tooltip';
+    document.body.appendChild(commitTooltip);
+
+    document.querySelectorAll('.commits-cell').forEach(el => {
+      const span = el.querySelector('.copyable');
+      const commits = ((span && span.dataset.commits) || '').split(', ').filter(Boolean);
+      if (commits.length <= 1) return; // nothing hidden — no tooltip needed
+      el.addEventListener('mouseenter', () => {
+        commitTooltip.innerHTML =
+          '<div class="commit-tooltip-header">' + commits.length + ' commits</div>' +
+          commits.map((c, i) =>
+            '<div class="commit-tooltip-row"><span class="commit-tooltip-idx">' + (i + 1) + '</span>' + c + '</div>'
+          ).join('');
+        commitTooltip.style.display = 'block';
+        const r = el.getBoundingClientRect();
+        const tw = commitTooltip.offsetWidth;
+        const th = commitTooltip.offsetHeight;
+        // Clamp horizontally so it never runs off the right edge.
+        let left = r.left;
+        if (left + tw > window.innerWidth - 12) left = window.innerWidth - tw - 12;
+        commitTooltip.style.left = Math.max(12, left) + 'px';
+        // Place below the cell, but flip above if it would overflow the bottom.
+        let top = r.bottom + 6;
+        if (top + th > window.innerHeight - 12) top = r.top - th - 6;
+        commitTooltip.style.top = Math.max(12, top) + 'px';
+      });
+      el.addEventListener('mouseleave', () => {
+        commitTooltip.style.display = 'none';
+      });
+    });
+
     function exportToCSV() {
-      const headers = ['Status', 'Block Producer Key', 'Total Stake', 'Active Stake %', 'Total Stake %', 'Delegators', 'Active', 'Timestamp', 'Commit', 'Block Height', 'Peer Count', 'Peer ID'];
+      const headers = ['Status', 'Block Producer Key', 'Total Stake', 'Active Stake %', 'Total Stake %', 'Delegators', 'Active', 'Timestamp', 'Commits', 'Block Height', 'Peer Count', 'Peer ID'];
       const rows = Array.from(document.querySelectorAll('#stats-table tr:not(.hidden)'));
 
       const formatVal = (val) => val === '-1' || val === -1 ? '' : val;
