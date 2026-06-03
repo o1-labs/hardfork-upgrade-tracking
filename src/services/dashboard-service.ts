@@ -1,6 +1,7 @@
 import { statsService } from './stats-service';
 import { blockProducerService } from './block-producer-service';
-import { renderDashboard, EnrichedNodeStats, StakeStats } from '../templates';
+import { groupByBlockProducer, computeStakeStats } from './block-producer-rows';
+import { renderDashboard, EnrichedNodeStats } from '../templates';
 
 export const dashboardService = {
   async render(releasePercentage: number): Promise<string> {
@@ -24,45 +25,11 @@ export const dashboardService = {
       };
     });
 
-    // Calculate stake stats - deduplicate by block producer key to avoid counting same BP twice
-    const seenUpgradedActiveBPs = new Set<string>();
-    const seenAllActiveBPs = new Set<string>();
-    const seenUpgradedBPs = new Set<string>();
+    // Collapse to one row per block producer (folds restart duplicates, drops
+    // nodes with no BP key), then derive stake stats from those unique rows.
+    const rows = groupByBlockProducer(enrichedStats);
+    const stakeStats = computeStakeStats(rows, lastSync);
 
-    let upgradedActiveStake = 0;
-    let totalActiveStake = 0;
-    let upgradedTotalStake = 0;
-
-    for (const s of enrichedStats) {
-      const bpKey = s.block_producer_public_key;
-      if (!bpKey) continue;
-
-      // Count upgraded active stake (unique BPs only)
-      if (s.upgraded && s.is_active && !seenUpgradedActiveBPs.has(bpKey)) {
-        seenUpgradedActiveBPs.add(bpKey);
-        upgradedActiveStake += s.percent_total_active_stake || 0;
-      }
-
-      // Count total active stake (unique BPs only)
-      if (s.is_active && !seenAllActiveBPs.has(bpKey)) {
-        seenAllActiveBPs.add(bpKey);
-        totalActiveStake += s.percent_total_active_stake || 0;
-      }
-
-      // Count upgraded total stake (unique BPs only)
-      if (s.upgraded && !seenUpgradedBPs.has(bpKey)) {
-        seenUpgradedBPs.add(bpKey);
-        upgradedTotalStake += s.percent_total_stake || 0;
-      }
-    }
-
-    const stakeStats: StakeStats = {
-      upgradedActiveStakePercent: upgradedActiveStake,
-      totalActiveStakePercent: totalActiveStake,
-      upgradedTotalStakePercent: upgradedTotalStake,
-      lastSync,
-    };
-
-    return renderDashboard(enrichedStats, releasePercentage, stakeStats);
+    return renderDashboard(rows, releasePercentage, stakeStats);
   },
 };

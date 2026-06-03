@@ -1,249 +1,170 @@
-// Test stake calculation logic
-describe('Dashboard stake calculations', () => {
-  // Helper function that mimics the dashboard service calculation
-  function calculateStakeStats(enrichedStats: any[]) {
-    const seenUpgradedActiveBPs = new Set<string>();
-    const seenAllActiveBPs = new Set<string>();
-    const seenUpgradedBPs = new Set<string>();
+import { groupByBlockProducer, computeStakeStats } from '../src/services/block-producer-rows';
+import { EnrichedNodeStats } from '../src/templates';
 
-    let upgradedActiveStake = 0;
-    let totalActiveStake = 0;
-    let upgradedTotalStake = 0;
+// Build an EnrichedNodeStats with sensible defaults that individual tests override.
+function node(overrides: Partial<EnrichedNodeStats>): EnrichedNodeStats {
+  return {
+    max_observed_block_height: 100,
+    commit_hash: 'commit_a',
+    chain_id: 'devnet',
+    peer_id: 'peer_1',
+    peer_count: 10,
+    timestamp: '2026-01-01T00:00:00.000Z',
+    block_producer_public_key: 'BP1',
+    upgraded: false,
+    total_stake: 1000,
+    num_delegators: 5,
+    percent_total_stake: 0.1,
+    percent_total_active_stake: 0.1,
+    is_active: true,
+    ...overrides,
+  };
+}
 
-    for (const s of enrichedStats) {
-      const bpKey = s.block_producer_public_key;
-      if (!bpKey) continue;
+describe('groupByBlockProducer', () => {
+  it('produces at most one row per block producer key', () => {
+    const rows = groupByBlockProducer([
+      node({ block_producer_public_key: 'BP1', peer_id: 'p1' }),
+      node({ block_producer_public_key: 'BP1', peer_id: 'p2' }),
+      node({ block_producer_public_key: 'BP2', peer_id: 'p3' }),
+    ]);
 
-      if (s.upgraded && s.is_active && !seenUpgradedActiveBPs.has(bpKey)) {
-        seenUpgradedActiveBPs.add(bpKey);
-        upgradedActiveStake += s.percent_total_active_stake || 0;
-      }
-
-      if (s.is_active && !seenAllActiveBPs.has(bpKey)) {
-        seenAllActiveBPs.add(bpKey);
-        totalActiveStake += s.percent_total_active_stake || 0;
-      }
-
-      if (s.upgraded && !seenUpgradedBPs.has(bpKey)) {
-        seenUpgradedBPs.add(bpKey);
-        upgradedTotalStake += s.percent_total_stake || 0;
-      }
-    }
-
-    return {
-      upgradedActiveStakePercent: upgradedActiveStake,
-      totalActiveStakePercent: totalActiveStake,
-      upgradedTotalStakePercent: upgradedTotalStake,
-    };
-  }
-
-  it('should calculate stake correctly for single nodes', () => {
-    const stats = [
-      { block_producer_public_key: 'BP1', upgraded: true, is_active: true, percent_total_active_stake: 0.5, percent_total_stake: 0.4 },
-      { block_producer_public_key: 'BP2', upgraded: false, is_active: true, percent_total_active_stake: 0.3, percent_total_stake: 0.3 },
-      { block_producer_public_key: 'BP3', upgraded: true, is_active: false, percent_total_active_stake: null, percent_total_stake: 0.2 },
-    ];
-
-    const result = calculateStakeStats(stats);
-
-    expect(result.upgradedActiveStakePercent).toBe(0.5); // Only BP1 (upgraded + active)
-    expect(result.totalActiveStakePercent).toBeCloseTo(0.8); // BP1 + BP2 (both active)
-    expect(result.upgradedTotalStakePercent).toBeCloseTo(0.6); // BP1 + BP3 (both upgraded)
+    expect(rows).toHaveLength(2);
+    expect(rows.map(r => r.block_producer_public_key).sort()).toEqual(['BP1', 'BP2']);
   });
 
-  it('should deduplicate by block producer key', () => {
-    const stats = [
-      { block_producer_public_key: 'BP1', upgraded: true, is_active: true, percent_total_active_stake: 0.5, percent_total_stake: 0.4 },
-      { block_producer_public_key: 'BP1', upgraded: true, is_active: true, percent_total_active_stake: 0.5, percent_total_stake: 0.4 }, // Duplicate
-      { block_producer_public_key: 'BP1', upgraded: true, is_active: true, percent_total_active_stake: 0.5, percent_total_stake: 0.4 }, // Another duplicate
-    ];
+  it('drops nodes that reported no block producer key', () => {
+    const rows = groupByBlockProducer([
+      node({ block_producer_public_key: undefined, peer_id: 'p1' }),
+      node({ block_producer_public_key: '', peer_id: 'p2' }),
+      node({ block_producer_public_key: 'BP1', peer_id: 'p3' }),
+    ]);
 
-    const result = calculateStakeStats(stats);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].block_producer_public_key).toBe('BP1');
+  });
 
-    // Should only count BP1 once
+  it('marks a BP upgraded if ANY of its nodes is upgraded', () => {
+    const rows = groupByBlockProducer([
+      node({ block_producer_public_key: 'BP1', peer_id: 'p1', upgraded: false, commit_hash: 'old' }),
+      node({ block_producer_public_key: 'BP1', peer_id: 'p2', upgraded: true, commit_hash: 'new' }),
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].upgraded).toBe(true);
+  });
+
+  it('keeps a BP not-upgraded when none of its nodes is upgraded', () => {
+    const rows = groupByBlockProducer([
+      node({ block_producer_public_key: 'BP1', peer_id: 'p1', upgraded: false, commit_hash: 'old' }),
+      node({ block_producer_public_key: 'BP1', peer_id: 'p2', upgraded: false, commit_hash: 'older' }),
+    ]);
+
+    expect(rows[0].upgraded).toBe(false);
+  });
+
+  it('lists all distinct commits (first-seen order, deduplicated)', () => {
+    const rows = groupByBlockProducer([
+      node({ block_producer_public_key: 'BP1', peer_id: 'p1', commit_hash: 'new' }),
+      node({ block_producer_public_key: 'BP1', peer_id: 'p2', commit_hash: 'old' }),
+      node({ block_producer_public_key: 'BP1', peer_id: 'p3', commit_hash: 'new' }), // duplicate
+    ]);
+
+    expect(rows[0].commits).toEqual(['new', 'old']);
+  });
+
+  it('uses the most recent report for peer/timestamp and the max block height', () => {
+    const rows = groupByBlockProducer([
+      node({
+        block_producer_public_key: 'BP1',
+        peer_id: 'recent',
+        peer_count: 42,
+        timestamp: '2026-03-01T00:00:00.000Z',
+        max_observed_block_height: 500,
+      }),
+      node({
+        block_producer_public_key: 'BP1',
+        peer_id: 'old',
+        peer_count: 7,
+        timestamp: '2026-01-01T00:00:00.000Z',
+        max_observed_block_height: 900,
+      }),
+    ]);
+
+    expect(rows[0].peer_id).toBe('recent');
+    expect(rows[0].peer_count).toBe(42);
+    expect(rows[0].timestamp).toBe('2026-03-01T00:00:00.000Z');
+    expect(rows[0].max_observed_block_height).toBe(900); // max across the group
+  });
+
+  it('returns an empty list for empty input', () => {
+    expect(groupByBlockProducer([])).toEqual([]);
+  });
+});
+
+describe('computeStakeStats', () => {
+  it('sums stake across unique block producer rows', () => {
+    const rows = groupByBlockProducer([
+      node({ block_producer_public_key: 'BP1', peer_id: 'p1', upgraded: true, is_active: true, percent_total_active_stake: 0.5, percent_total_stake: 0.4 }),
+      node({ block_producer_public_key: 'BP2', peer_id: 'p2', upgraded: false, is_active: true, percent_total_active_stake: 0.3, percent_total_stake: 0.3 }),
+      node({ block_producer_public_key: 'BP3', peer_id: 'p3', upgraded: true, is_active: false, percent_total_active_stake: null, percent_total_stake: 0.2 }),
+    ]);
+
+    const result = computeStakeStats(rows, null);
+
+    expect(result.upgradedActiveStakePercent).toBe(0.5); // BP1 (upgraded + active)
+    expect(result.totalActiveStakePercent).toBeCloseTo(0.8); // BP1 + BP2 (active)
+    expect(result.upgradedTotalStakePercent).toBeCloseTo(0.6); // BP1 + BP3 (upgraded)
+  });
+
+  it('counts each BP once even with many duplicate node records', () => {
+    const stats = Array(100).fill(null).map((_, i) =>
+      node({ block_producer_public_key: 'BP1', peer_id: `p${i}`, upgraded: true, is_active: true, percent_total_active_stake: 0.5, percent_total_stake: 0.4 })
+    );
+
+    const result = computeStakeStats(groupByBlockProducer(stats), null);
+
     expect(result.upgradedActiveStakePercent).toBe(0.5);
     expect(result.totalActiveStakePercent).toBe(0.5);
     expect(result.upgradedTotalStakePercent).toBe(0.4);
   });
 
-  it('should skip nodes without block producer key', () => {
-    const stats = [
-      { block_producer_public_key: null, upgraded: true, is_active: true, percent_total_active_stake: 0.5, percent_total_stake: 0.4 },
-      { block_producer_public_key: '', upgraded: true, is_active: true, percent_total_active_stake: 0.3, percent_total_stake: 0.3 },
-      { block_producer_public_key: 'BP1', upgraded: true, is_active: true, percent_total_active_stake: 0.2, percent_total_stake: 0.1 },
-    ];
+  it('counts a BP as upgraded stake if ANY of its nodes is upgraded', () => {
+    // Most recent node is NOT upgraded, older one IS — the BP still counts as upgraded.
+    const rows = groupByBlockProducer([
+      node({ block_producer_public_key: 'BP1', peer_id: 'recent', timestamp: '2026-03-01T00:00:00.000Z', upgraded: false, is_active: true, percent_total_active_stake: 0.6, percent_total_stake: 0.5 }),
+      node({ block_producer_public_key: 'BP1', peer_id: 'old', timestamp: '2026-01-01T00:00:00.000Z', upgraded: true, is_active: true, percent_total_active_stake: 0.6, percent_total_stake: 0.5 }),
+    ]);
 
-    const result = calculateStakeStats(stats);
+    const result = computeStakeStats(rows, null);
 
-    expect(result.upgradedActiveStakePercent).toBe(0.2); // Only BP1
-    expect(result.totalActiveStakePercent).toBe(0.2);
-    expect(result.upgradedTotalStakePercent).toBe(0.1);
+    expect(result.upgradedActiveStakePercent).toBe(0.6);
+    expect(result.upgradedTotalStakePercent).toBe(0.5);
   });
 
-  it('should handle null stake percentages', () => {
-    const stats = [
-      { block_producer_public_key: 'BP1', upgraded: true, is_active: true, percent_total_active_stake: null, percent_total_stake: null },
-      { block_producer_public_key: 'BP2', upgraded: true, is_active: true, percent_total_active_stake: 0.5, percent_total_stake: 0.4 },
-    ];
-
-    const result = calculateStakeStats(stats);
-
-    expect(result.upgradedActiveStakePercent).toBe(0.5);
-    expect(result.totalActiveStakePercent).toBe(0.5);
-    expect(result.upgradedTotalStakePercent).toBe(0.4);
-  });
-
-  it('should return zeros for empty stats', () => {
-    const result = calculateStakeStats([]);
-
+  it('returns zeros for empty stats', () => {
+    const result = computeStakeStats([], null);
     expect(result.upgradedActiveStakePercent).toBe(0);
     expect(result.totalActiveStakePercent).toBe(0);
     expect(result.upgradedTotalStakePercent).toBe(0);
   });
 
-  it('should not exceed 100% when data is correct', () => {
-    const stats = [
-      { block_producer_public_key: 'BP1', upgraded: true, is_active: true, percent_total_active_stake: 0.4, percent_total_stake: 0.3 },
-      { block_producer_public_key: 'BP2', upgraded: true, is_active: true, percent_total_active_stake: 0.3, percent_total_stake: 0.25 },
-      { block_producer_public_key: 'BP3', upgraded: false, is_active: true, percent_total_active_stake: 0.3, percent_total_stake: 0.25 },
-    ];
+  it('does not exceed 100% when data is correct', () => {
+    const rows = groupByBlockProducer([
+      node({ block_producer_public_key: 'BP1', peer_id: 'p1', upgraded: true, is_active: true, percent_total_active_stake: 0.4, percent_total_stake: 0.3 }),
+      node({ block_producer_public_key: 'BP2', peer_id: 'p2', upgraded: true, is_active: true, percent_total_active_stake: 0.3, percent_total_stake: 0.25 }),
+      node({ block_producer_public_key: 'BP3', peer_id: 'p3', upgraded: false, is_active: true, percent_total_active_stake: 0.3, percent_total_stake: 0.25 }),
+    ]);
 
-    const result = calculateStakeStats(stats);
+    const result = computeStakeStats(rows, null);
 
     expect(result.upgradedActiveStakePercent).toBeLessThanOrEqual(1);
     expect(result.totalActiveStakePercent).toBeLessThanOrEqual(1);
     expect(result.upgradedTotalStakePercent).toBeLessThanOrEqual(1);
   });
 
-  it('should handle all nodes not upgraded', () => {
-    const stats = [
-      { block_producer_public_key: 'BP1', upgraded: false, is_active: true, percent_total_active_stake: 0.5, percent_total_stake: 0.4 },
-      { block_producer_public_key: 'BP2', upgraded: false, is_active: true, percent_total_active_stake: 0.5, percent_total_stake: 0.4 },
-    ];
-
-    const result = calculateStakeStats(stats);
-
-    expect(result.upgradedActiveStakePercent).toBe(0);
-    expect(result.upgradedTotalStakePercent).toBe(0);
-    expect(result.totalActiveStakePercent).toBeCloseTo(1.0);
-  });
-
-  it('should handle all nodes upgraded', () => {
-    const stats = [
-      { block_producer_public_key: 'BP1', upgraded: true, is_active: true, percent_total_active_stake: 0.5, percent_total_stake: 0.4 },
-      { block_producer_public_key: 'BP2', upgraded: true, is_active: true, percent_total_active_stake: 0.5, percent_total_stake: 0.4 },
-    ];
-
-    const result = calculateStakeStats(stats);
-
-    expect(result.upgradedActiveStakePercent).toBeCloseTo(1.0);
-    expect(result.totalActiveStakePercent).toBeCloseTo(1.0);
-  });
-
-  it('should handle mix of active and inactive block producers', () => {
-    const stats = [
-      { block_producer_public_key: 'BP1', upgraded: true, is_active: true, percent_total_active_stake: 0.3, percent_total_stake: 0.2 },
-      { block_producer_public_key: 'BP2', upgraded: true, is_active: false, percent_total_active_stake: null, percent_total_stake: 0.1 },
-      { block_producer_public_key: 'BP3', upgraded: false, is_active: true, percent_total_active_stake: 0.4, percent_total_stake: 0.3 },
-      { block_producer_public_key: 'BP4', upgraded: false, is_active: false, percent_total_active_stake: null, percent_total_stake: 0.2 },
-    ];
-
-    const result = calculateStakeStats(stats);
-
-    expect(result.upgradedActiveStakePercent).toBe(0.3); // Only BP1
-    expect(result.totalActiveStakePercent).toBeCloseTo(0.7); // BP1 + BP3
-    expect(result.upgradedTotalStakePercent).toBeCloseTo(0.3); // BP1 + BP2
-  });
-
-  it('should handle very small stake percentages', () => {
-    const stats = [
-      { block_producer_public_key: 'BP1', upgraded: true, is_active: true, percent_total_active_stake: 0.0001, percent_total_stake: 0.00005 },
-      { block_producer_public_key: 'BP2', upgraded: true, is_active: true, percent_total_active_stake: 0.0002, percent_total_stake: 0.00010 },
-    ];
-
-    const result = calculateStakeStats(stats);
-
-    expect(result.upgradedActiveStakePercent).toBeCloseTo(0.0003);
-    expect(result.upgradedTotalStakePercent).toBeCloseTo(0.00015);
-  });
-
-  it('should handle single node scenario', () => {
-    const stats = [
-      { block_producer_public_key: 'BP1', upgraded: true, is_active: true, percent_total_active_stake: 1.0, percent_total_stake: 1.0 },
-    ];
-
-    const result = calculateStakeStats(stats);
-
-    expect(result.upgradedActiveStakePercent).toBe(1.0);
-    expect(result.totalActiveStakePercent).toBe(1.0);
-    expect(result.upgradedTotalStakePercent).toBe(1.0);
-  });
-
-  it('should handle undefined values gracefully', () => {
-    const stats = [
-      { block_producer_public_key: 'BP1', upgraded: true, is_active: true, percent_total_active_stake: undefined, percent_total_stake: undefined },
-      { block_producer_public_key: 'BP2', upgraded: true, is_active: true, percent_total_active_stake: 0.5, percent_total_stake: 0.4 },
-    ];
-
-    const result = calculateStakeStats(stats);
-
-    expect(result.upgradedActiveStakePercent).toBe(0.5);
-    expect(result.upgradedTotalStakePercent).toBe(0.4);
-  });
-
-  it('should handle many duplicate BP keys correctly', () => {
-    const stats = Array(100).fill(null).map((_, i) => ({
-      block_producer_public_key: 'BP1',
-      upgraded: true,
-      is_active: true,
-      percent_total_active_stake: 0.5,
-      percent_total_stake: 0.4,
-    }));
-
-    const result = calculateStakeStats(stats);
-
-    // Should only count once despite 100 entries
-    expect(result.upgradedActiveStakePercent).toBe(0.5);
-    expect(result.totalActiveStakePercent).toBe(0.5);
-    expect(result.upgradedTotalStakePercent).toBe(0.4);
-  });
-
-  it('should handle large number of unique block producers', () => {
-    const stats = Array(1000).fill(null).map((_, i) => ({
-      block_producer_public_key: `BP${i}`,
-      upgraded: i % 2 === 0,
-      is_active: true,
-      percent_total_active_stake: 0.001,
-      percent_total_stake: 0.001,
-    }));
-
-    const result = calculateStakeStats(stats);
-
-    expect(result.upgradedActiveStakePercent).toBeCloseTo(0.5); // 500 upgraded
-    expect(result.totalActiveStakePercent).toBeCloseTo(1.0); // 1000 total
-  });
-
-  it('should handle mixed upgrade status for same BP (first wins)', () => {
-    const stats = [
-      { block_producer_public_key: 'BP1', upgraded: true, is_active: true, percent_total_active_stake: 0.5, percent_total_stake: 0.4 },
-      { block_producer_public_key: 'BP1', upgraded: false, is_active: true, percent_total_active_stake: 0.5, percent_total_stake: 0.4 },
-    ];
-
-    const result = calculateStakeStats(stats);
-
-    // First entry marks BP1 as upgraded, so it should be counted
-    expect(result.upgradedActiveStakePercent).toBe(0.5);
-  });
-
-  it('should handle zero stake percentages', () => {
-    const stats = [
-      { block_producer_public_key: 'BP1', upgraded: true, is_active: true, percent_total_active_stake: 0, percent_total_stake: 0 },
-      { block_producer_public_key: 'BP2', upgraded: true, is_active: true, percent_total_active_stake: 0, percent_total_stake: 0 },
-    ];
-
-    const result = calculateStakeStats(stats);
-
-    expect(result.upgradedActiveStakePercent).toBe(0);
-    expect(result.upgradedTotalStakePercent).toBe(0);
+  it('passes lastSync through unchanged', () => {
+    const result = computeStakeStats([], '2026-05-29T11:31:38.000Z');
+    expect(result.lastSync).toBe('2026-05-29T11:31:38.000Z');
   });
 });
