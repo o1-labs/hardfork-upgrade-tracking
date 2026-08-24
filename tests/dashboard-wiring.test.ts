@@ -93,7 +93,7 @@ describe('dashboardService.render wiring', () => {
     const withoutFlag = await dashboardService.render(85);
     const withFlag = await dashboardService.render(85, true);
 
-    // The one BP holds 30% active stake. Admitting two keyless seeds alongside it
+    // The one BP holds 30% active stake. Admitting the keyless seed alongside it
     // must neither dilute nor inflate the headline.
     expect(withoutFlag).toContain('<div class="adoption-percentage">30.00%</div>');
     expect(withFlag).toContain('<div class="adoption-percentage">30.00%</div>');

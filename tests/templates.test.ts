@@ -137,9 +137,26 @@ describe('renderDashboard table', () => {
     // Document-wide, not scoped to one div: the header, the adoption headline and
     // both stat cards render the same metric, and a narrow assertion let the
     // header keep saying "0.00%" while the cards said "—".
-    expect(html).not.toContain('0.00%');
+    // Anchored to a whole text node rather than `toContain('0.00%')`, which
+    // matches as a substring of "10.00%" / "100.00%" and would fire spuriously
+    // if a count-based percentage is ever added to this view.
+    expect(html).not.toMatch(/>\s*0\.00%\s*</);
     expect(html).toContain('const hasBpStake = false');
     expect(html).toContain('width: 0%');
+  });
+
+  it('treats an empty dashboard as "no stake tracked" on the default path too', () => {
+    // hasBpRows is derived from the rows, not from the flag, so a freshly
+    // deployed tracker with no submissions yet gets the em dash rather than a
+    // 0.00% that would read as "nothing has upgraded". This is the one place
+    // the default path's output differs from before the flag existed.
+    const html = renderDashboard([], 85, emptyStakeStats);
+
+    expect(html).not.toMatch(/>\s*0\.00%\s*</);
+    expect(html).toContain('No block producers are reporting to this deployment');
+    expect(html).toContain('const hasBpStake = false');
+    // Labels stay "Block Producers": the flag is off.
+    expect(html).toContain('Total Block Producers');
   });
 
   it('shows real stake figures when at least one block producer is tracked', () => {
