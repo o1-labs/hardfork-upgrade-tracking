@@ -168,3 +168,154 @@ describe('computeStakeStats', () => {
     expect(result.lastSync).toBe('2026-05-29T11:31:38.000Z');
   });
 });
+
+describe('groupByBlockProducer with includeNonBp', () => {
+  // A keyless node has no BP record to enrich from, so every stake field is null.
+  // The field is `undefined` rather than `null` on the way in: statsRepository
+  // normalizes the DB's NULL to undefined (`?? undefined`) on read. The row it
+  // produces normalizes back to null, matching the other nullable row fields.
+  function keyless(overrides: Partial<EnrichedNodeStats>): EnrichedNodeStats {
+    return node({
+      block_producer_public_key: undefined,
+      total_stake: null,
+      num_delegators: null,
+      percent_total_stake: null,
+      percent_total_active_stake: null,
+      is_active: null,
+      ...overrides,
+    });
+  }
+
+  it('drops keyless nodes by default (unchanged behaviour)', () => {
+    const rows = groupByBlockProducer([
+      node({ block_producer_public_key: 'BP1', peer_id: 'p1' }),
+      keyless({ peer_id: 'p2' }),
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].block_producer_public_key).toBe('BP1');
+  });
+
+  it('admits keyless nodes as one row per peer_id when enabled', () => {
+    const rows = groupByBlockProducer(
+      [
+        node({ block_producer_public_key: 'BP1', peer_id: 'p1' }),
+        keyless({ peer_id: 'p2' }),
+        keyless({ peer_id: 'p3' }),
+      ],
+      true
+    );
+
+    expect(rows).toHaveLength(3);
+    const keylessRows = rows.filter(r => r.block_producer_public_key === null);
+    expect(keylessRows.map(r => r.peer_id).sort()).toEqual(['p2', 'p3']);
+  });
+
+  it('does not fold distinct keyless nodes together', () => {
+    // Two seeds on the same commit must stay separate rows — with no BP key to
+    // fold on, peer_id is the only identity they have.
+    const rows = groupByBlockProducer(
+      [keyless({ peer_id: 'seed1' }), keyless({ peer_id: 'seed2' })],
+      true
+    );
+
+    expect(rows).toHaveLength(2);
+  });
+
+  it('still folds BP restart duplicates while admitting keyless nodes', () => {
+    const rows = groupByBlockProducer(
+      [
+        node({ block_producer_public_key: 'BP1', peer_id: 'p1', commit_hash: 'c1' }),
+        node({ block_producer_public_key: 'BP1', peer_id: 'p2', commit_hash: 'c2' }),
+        keyless({ peer_id: 'p3' }),
+      ],
+      true
+    );
+
+    expect(rows).toHaveLength(2);
+    const bpRow = rows.find(r => r.block_producer_public_key === 'BP1')!;
+    expect(bpRow.commits).toEqual(['c1', 'c2']);
+  });
+
+  it('never lets a peer_id collide with an identically named BP key', () => {
+    const rows = groupByBlockProducer(
+      [node({ block_producer_public_key: 'X', peer_id: 'p1' }), keyless({ peer_id: 'X' })],
+      true
+    );
+
+    expect(rows).toHaveLength(2);
+  });
+
+  it('marks a keyless node upgraded from its own commit', () => {
+    const rows = groupByBlockProducer([keyless({ peer_id: 'p1', upgraded: true })], true);
+    expect(rows[0].upgraded).toBe(true);
+  });
+
+  it('keeps keyless rows out of the stake math', () => {
+    const bp = node({
+      block_producer_public_key: 'BP1', peer_id: 'p1', upgraded: true,
+      is_active: true, percent_total_active_stake: 0.4, percent_total_stake: 0.3,
+    });
+
+    const withoutKeyless = computeStakeStats(groupByBlockProducer([bp]), null);
+    const withKeyless = computeStakeStats(
+      groupByBlockProducer(
+        [bp, keyless({ peer_id: 'seed1', upgraded: true }), keyless({ peer_id: 'seed2' })],
+        true
+      ),
+      null
+    );
+
+    expect(withKeyless).toEqual(withoutKeyless);
+  });
+
+  it('strips stake off a keyless node even when the caller supplies it', () => {
+    // The invariant must be structural, not a property of how dashboard-service
+    // happens to enrich records. Feeding a keyless node with full stake fields is
+    // the only version of this test that can actually fail: `keyless()` nulls them
+    // up front, so a pass-through implementation would satisfy that one too.
+    const rows = groupByBlockProducer(
+      [
+        node({
+          block_producer_public_key: undefined,
+          peer_id: 'seed1',
+          upgraded: true,
+          is_active: true,
+          total_stake: 5000,
+          num_delegators: 9,
+          percent_total_active_stake: 0.3,
+          percent_total_stake: 0.25,
+        }),
+      ],
+      true
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      block_producer_public_key: null,
+      total_stake: null,
+      num_delegators: null,
+      percent_total_stake: null,
+      percent_total_active_stake: null,
+      is_active: null,
+      upgraded: true,
+    });
+
+    expect(computeStakeStats(rows, null)).toEqual({
+      upgradedActiveStakePercent: 0,
+      totalActiveStakePercent: 0,
+      upgradedTotalStakePercent: 0,
+      lastSync: null,
+    });
+  });
+
+  it('normalizes an empty-string BP key to null rather than leaving it ""', () => {
+    const rows = groupByBlockProducer(
+      [node({ block_producer_public_key: '', peer_id: 'p1', total_stake: 1000 })],
+      true
+    );
+
+    expect(rows[0].block_producer_public_key).toBeNull();
+    expect(rows[0].total_stake).toBeNull();
+  });
+});

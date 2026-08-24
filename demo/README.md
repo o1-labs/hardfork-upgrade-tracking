@@ -70,6 +70,7 @@ Available environment variables:
 | `TRACKER_IMAGE` | `hardfork-tracker:local` | Tracker image (use pre-built: `ghcr.io/o1-labs/hardfork-upgrade-tracking:latest`) |
 | `DATABASE_URL` | local postgres | PostgreSQL connection string |
 | `RELEASE_PERCENTAGE` | `65` | Target percentage for upgrade completion |
+| `SHOW_NON_BP_NODES` | `false` | Show nodes reporting no block producer key as their own rows (stake figures stay block-producer-only) |
 | `MINA_IMAGE` | devnet 3.3.0-beta1 amd64 | Docker image for Mina daemon |
 | `MINA_PLATFORM` | `linux/amd64` | Container platform (use `linux/arm64` for Apple Silicon) |
 | `MINA_PEER_LIST_URL` | devnet bootnodes | URL for Mina peer list |

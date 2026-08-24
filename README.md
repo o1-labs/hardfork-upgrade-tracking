@@ -51,6 +51,18 @@ This project provides a simple server to track the upgrade status of nodes in a 
     ```
     You can also optionally change the `RELEASE_PERCENTAGE`.
 
+    **Optional — `SHOW_NON_BP_NODES`.** By default the dashboard table shows one row
+    per *block producer*, and nodes reporting no block producer key are hidden (they
+    are still stored, and readable via `GET /submit/stats`). Set
+    `SHOW_NON_BP_NODES=true` to admit those nodes as their own rows, keyed by
+    `peer_id`. This is meant for networks where we operate no block producers of our
+    own — on mainnet the fleet is archive + seed nodes, so every node we run reports
+    a null BP key and the default view is permanently empty. With the flag on the
+    count cards read "Nodes" rather than "Block Producers", since the rows are no
+    longer one-per-block-producer. Stake figures are identical either way: keyless
+    rows carry no stake and are excluded from the stake math, so the release-target
+    gate still measures block producer stake only.
+
 4.  **Apply the database schema:**
 
     Run the following command to create the tables in your database:
@@ -94,6 +106,7 @@ Docker images are published to GitHub Container Registry at `ghcr.io/o1-labs/har
 docker run --rm -p 3000:3000 \
   -e DATABASE_URL="postgresql://user:password@host:5432/db" \
   -e RELEASE_PERCENTAGE="65" \
+  -e SHOW_NON_BP_NODES="false" \
   ghcr.io/o1-labs/hardfork-upgrade-tracking:latest
 ```
 

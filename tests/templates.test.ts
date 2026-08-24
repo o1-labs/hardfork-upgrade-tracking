@@ -18,6 +18,21 @@ function bpRow(overrides: Partial<BlockProducerRow>): BlockProducerRow {
   };
 }
 
+// A row produced from a node that reported no block producer key: keyed by
+// peer_id, with every stake field nulled by groupByBlockProducer.
+function keylessRow(overrides: Partial<BlockProducerRow> = {}): BlockProducerRow {
+  return bpRow({
+    block_producer_public_key: null,
+    peer_id: 'seed_peer_1',
+    total_stake: null,
+    num_delegators: null,
+    percent_total_stake: null,
+    percent_total_active_stake: null,
+    is_active: null,
+    ...overrides,
+  });
+}
+
 const emptyStakeStats: StakeStats = {
   upgradedActiveStakePercent: 0,
   totalActiveStakePercent: 0,
@@ -87,6 +102,74 @@ describe('renderDashboard table', () => {
     expect(html).toContain('Total Block Producers');
     expect(html).toContain('Upgraded Block Producers');
     expect(html).toContain('Not Upgraded Block Producers');
+  });
+
+  it('relabels the count cards as Nodes when non-BP nodes are admitted', () => {
+    const html = renderDashboard([bpRow({})], 80, emptyStakeStats, true);
+
+    expect(html).toContain('Total Nodes');
+    expect(html).toContain('Upgraded Nodes');
+    expect(html).toContain('Not Upgraded Nodes');
+    // Scoped to the card labels: the table header is "Block Producer Key", and
+    // unrelated copy elsewhere in the template should not fail this test.
+    expect(html).not.toContain('Total Block Producers');
+    expect(html).not.toContain('Upgraded Block Producers');
+  });
+
+  it('renders a keyless row with a dash and no copy button for the key', () => {
+    const html = renderDashboard([keylessRow()], 80, emptyStakeStats, true);
+
+    expect(html).toContain('data-bp_key=""');
+    expect(html).toContain('seed_peer_1');
+
+    // Assert positively on the BP-key cell rather than just the absence of a
+    // literal 'null': a bug emitting copyToClipboard('') would slip past that.
+    const bpCell = html.split('<td class="mono">')[1] ?? '';
+    expect(bpCell).toContain('-');
+    expect(bpCell).not.toContain('copy-btn');
+  });
+
+  it('shows an em dash and a note for stake when no block producer is tracked', () => {
+    const html = renderDashboard([keylessRow()], 85, emptyStakeStats, true);
+
+    expect(html).toContain('&mdash;');
+    expect(html).toContain('No block producers are reporting to this deployment');
+    // Document-wide, not scoped to one div: the header, the adoption headline and
+    // both stat cards render the same metric, and a narrow assertion let the
+    // header keep saying "0.00%" while the cards said "—".
+    // Anchored to a whole text node rather than `toContain('0.00%')`, which
+    // matches as a substring of "10.00%" / "100.00%" and would fire spuriously
+    // if a count-based percentage is ever added to this view.
+    expect(html).not.toMatch(/>\s*0\.00%\s*</);
+    expect(html).toContain('const hasBpStake = false');
+    expect(html).toContain('width: 0%');
+  });
+
+  it('treats an empty dashboard as "no stake tracked" on the default path too', () => {
+    // hasBpRows is derived from the rows, not from the flag, so a freshly
+    // deployed tracker with no submissions yet gets the em dash rather than a
+    // 0.00% that would read as "nothing has upgraded". This is the one place
+    // the default path's output differs from before the flag existed.
+    const html = renderDashboard([], 85, emptyStakeStats);
+
+    expect(html).not.toMatch(/>\s*0\.00%\s*</);
+    expect(html).toContain('No block producers are reporting to this deployment');
+    expect(html).toContain('const hasBpStake = false');
+    // Labels stay "Block Producers": the flag is off.
+    expect(html).toContain('Total Block Producers');
+  });
+
+  it('shows real stake figures when at least one block producer is tracked', () => {
+    const html = renderDashboard(
+      [bpRow({ block_producer_public_key: 'BP1' }), keylessRow()],
+      85,
+      { ...emptyStakeStats, upgradedActiveStakePercent: 0.42 },
+      true
+    );
+
+    expect(html).toContain('42.00%');
+    expect(html).not.toContain('No block producers are reporting to this deployment');
+    expect(html).toContain('const hasBpStake = true');
   });
 });
 

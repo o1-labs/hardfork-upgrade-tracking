@@ -35,14 +35,30 @@ Live: https://devnet-status.gcp.o1test.net/
     is upgraded; `commits` = distinct list (first-seen order); peer/timestamp from
     the **most recent** report; block height = **max**; nodes with **no BP key are
     dropped** (still kept in the DB for potential future use).
+  - **`SHOW_NON_BP_NODES=true`** flips that last rule: keyless nodes are admitted
+    as one row each, keyed by `peer_id` (no BP key means no restart-folding, so a
+    restart under a new peer_id becomes a new row). That is why
+    `BlockProducerRow.block_producer_public_key` is `string | null`. Intended for
+    networks where o1Labs runs no block producers of its own — on mainnet the
+    fleet is archive + seeds, so the default view is permanently empty. With the
+    flag on the count cards read "Nodes" instead of "Block Producers".
   - `computeStakeStats` sums stake over those unique rows (so the cards and the
-    table can never disagree).
+    table can never disagree). Keyless rows carry null stake fields and a null
+    `is_active` (nulled by `groupByBlockProducer` itself, not by the caller), so
+    they contribute nothing and the stake gate stays block-producer-only
+    regardless of `SHOW_NON_BP_NODES`. Keep it that way.
+  - When **no** row has a BP key, `renderDashboard` renders the stake figures as
+    an em dash with an explanatory note, and the donut as a single neutral slice
+    — a literal `0.00%` there reads as "nothing upgraded" rather than "no stake
+    is being measured".
 - **Commits column** (`src/templates.ts`): shows the first 2 short hashes inline +
   a muted `+N more`. Hover shows a styled, body-level tooltip with the full list
   (positioned so it flips above the cell near the bottom of the screen and never
   clips). The copy button + CSV export use the complete comma-separated list
   (`data-commit`). Cap is `MAX_VISIBLE_COMMITS` in `renderDashboard`.
-- **Summary cards count block producers, not node records** ("… Block Producers").
+- **Summary cards count block producers, not node records** ("… Block Producers")
+  — unless `SHOW_NON_BP_NODES` is on, where they count rows and the noun becomes
+  "Nodes" (`countNoun` in `renderDashboard`).
 - **Responsive:** `≤1024px` collapses the 5-col dashboard grid to 2; `≤640px` is a
   single column and **hides the header stats** (they duplicate the cards below).
 

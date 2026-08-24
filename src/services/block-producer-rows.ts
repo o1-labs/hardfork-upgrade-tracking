@@ -12,32 +12,57 @@ import type { EnrichedNodeStats, StakeStats, BlockProducerRow } from '../templat
  *  - max_observed_block_height is the max across the group.
  *
  * Nodes that reported no block producer key are dropped (not useful in the table;
- * still retained in the DB for later access).
+ * still retained in the DB for later access) — unless `includeNonBp` is set.
+ *
+ * `includeNonBp` exists for networks where o1Labs runs no block producers of its
+ * own (mainnet: archive + seeds only). There every node we operate reports a null
+ * BP key, so the default behaviour hides 100% of the fleet and the table renders
+ * empty. With the flag on, each keyless node gets its own row keyed by `peer_id`;
+ * there is no BP key to fold restart duplicates on, so a node that restarts under
+ * a new peer_id shows up as a separate row.
+ *
+ * Stake math is unaffected either way: this function nulls out every stake field
+ * on a keyless row, and computeStakeStats skips nulls — so the release-target
+ * gate keeps measuring block producer stake only, whatever the caller passes in.
  */
-export function groupByBlockProducer(stats: EnrichedNodeStats[]): BlockProducerRow[] {
+export function groupByBlockProducer(
+  stats: EnrichedNodeStats[],
+  includeNonBp: boolean = false
+): BlockProducerRow[] {
   const groups = new Map<string, BlockProducerRow>();
 
   for (const s of stats) {
     const bpKey = s.block_producer_public_key;
-    if (!bpKey) continue;
+    if (!bpKey && !includeNonBp) continue;
 
-    let row = groups.get(bpKey);
+    // Namespace the two key spaces so a peer_id can never collide with a BP key.
+    const groupKey = bpKey ? `bp:${bpKey}` : `peer:${s.peer_id}`;
+
+    let row = groups.get(groupKey);
     if (!row) {
       row = {
-        block_producer_public_key: bpKey,
+        // `|| null`, not `?? null`: an empty-string BP key is treated as keyless
+        // by the guard above, so it must normalize to null here too or the
+        // documented `=== null` discriminator would misclassify it.
+        block_producer_public_key: bpKey || null,
         upgraded: false,
-        total_stake: s.total_stake,
-        num_delegators: s.num_delegators,
-        percent_total_stake: s.percent_total_stake,
-        percent_total_active_stake: s.percent_total_active_stake,
-        is_active: s.is_active,
+        // Stake belongs to a block producer, so a keyless row must not carry any
+        // — this is what keeps computeStakeStats (and the release-target gate)
+        // block-producer-only. Enforced here rather than relying on the caller
+        // happening to pass nulls, so the invariant survives changes to how
+        // dashboard-service enriches records.
+        total_stake: bpKey ? s.total_stake : null,
+        num_delegators: bpKey ? s.num_delegators : null,
+        percent_total_stake: bpKey ? s.percent_total_stake : null,
+        percent_total_active_stake: bpKey ? s.percent_total_active_stake : null,
+        is_active: bpKey ? s.is_active : null,
         commits: [],
         timestamp: s.timestamp,
         max_observed_block_height: s.max_observed_block_height,
         peer_count: s.peer_count,
         peer_id: s.peer_id,
       };
-      groups.set(bpKey, row);
+      groups.set(groupKey, row);
     }
 
     row.upgraded = row.upgraded || !!s.upgraded;

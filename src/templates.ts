@@ -21,7 +21,12 @@ export interface StakeStats {
  * distinct list of commits the BP reported across all its node records.
  */
 export interface BlockProducerRow {
-  block_producer_public_key: string;
+  /**
+   * Null only for a row produced from a node that reported no block producer key,
+   * which happens when groupByBlockProducer is called with `includeNonBp` (see
+   * SHOW_NON_BP_NODES). Those rows are keyed by peer_id and carry no stake data.
+   */
+  block_producer_public_key: string | null;
   upgraded: boolean;
   total_stake: number | null;
   num_delegators: number | null;
@@ -53,13 +58,35 @@ function formatPercent(pct: number | null): string {
   return (pct * 100).toFixed(2) + '%';
 }
 
-export function renderDashboard(rows: BlockProducerRow[], releasePercentage: number, stakeStats: StakeStats): string {
+export function renderDashboard(
+  rows: BlockProducerRow[],
+  releasePercentage: number,
+  stakeStats: StakeStats,
+  includeNonBp: boolean = false
+): string {
+  // With non-BP nodes admitted the rows are no longer one-per-block-producer, so
+  // the count labels have to say "Nodes" or they misdescribe what they total.
+  // The stake cards are unaffected — keyless rows contribute no stake.
+  const countNoun = includeNonBp ? 'Nodes' : 'Block Producers';
   const total = rows.length;
   const upgradedCount = rows.filter(r => r.upgraded).length;
   const pendingCount = total - upgradedCount;
   const percentage = total > 0 ? Math.round((upgradedCount / total) * 100) : 0;
   const stakePercentage = (stakeStats.upgradedActiveStakePercent * 100).toFixed(2);
   const totalStakePercentage = (stakeStats.upgradedTotalStakePercent * 100).toFixed(2);
+
+  // Stake is a block-producer property. On a fleet with no block producers at all
+  // (SHOW_NON_BP_NODES over seeds/archive) every stake figure is structurally
+  // zero, and rendering "0.00%" next to a full-orange donut reads as "the network
+  // has not upgraded" when the truth is "no stake is being measured here". Render
+  // an em dash and say so instead of asserting a number we do not have.
+  const hasBpRows = rows.some(r => r.block_producer_public_key !== null);
+  const stakeValue = hasBpRows ? `${stakePercentage}%` : '&mdash;';
+  const totalStakeValue = hasBpRows ? `${totalStakePercentage}%` : '&mdash;';
+  const stakeBarWidth = hasBpRows ? stakePercentage : '0';
+  const noStakeNote = hasBpRows
+    ? ''
+    : '<div class="adoption-note">No block producers are reporting to this deployment, so stake adoption cannot be measured. The counts below track reporting nodes.</div>';
 
   const tableRows = rows.map((s) => {
     const upgraded = s.upgraded;
@@ -369,6 +396,13 @@ export function renderDashboard(rows: BlockProducerRow[], releasePercentage: num
       border-radius: 8px;
       overflow: visible;
       position: relative;
+    }
+
+    .adoption-note {
+      margin-top: 14px;
+      font-size: 0.8rem;
+      line-height: 1.45;
+      color: var(--text-muted);
     }
 
     .adoption-bar-fill {
@@ -1068,7 +1102,7 @@ export function renderDashboard(rows: BlockProducerRow[], releasePercentage: num
       <div class="header-stats">
         <div class="header-stat">
           <div class="label">Active Stake Upgraded</div>
-          <div class="value success">${stakePercentage}%</div>
+          <div class="value success">${stakeValue}</div>
         </div>
         <div class="header-stat">
           <div class="label">Upgraded</div>
@@ -1079,7 +1113,7 @@ export function renderDashboard(rows: BlockProducerRow[], releasePercentage: num
           <div class="value danger">${pendingCount}</div>
         </div>
         <div class="header-stat">
-          <div class="label">Block Producers</div>
+          <div class="label">${countNoun}</div>
           <div class="value primary">${total}</div>
         </div>
       </div>
@@ -1104,12 +1138,13 @@ export function renderDashboard(rows: BlockProducerRow[], releasePercentage: num
               <span class="material-icons-outlined">trending_up</span>
               <h2>Active Stake Adoption</h2>
             </div>
-            <div class="adoption-percentage">${stakePercentage}%</div>
+            <div class="adoption-percentage">${stakeValue}</div>
           </div>
           <div class="adoption-bar">
-            <div class="adoption-bar-fill" style="width: ${stakePercentage}%"></div>
+            <div class="adoption-bar-fill" style="width: ${stakeBarWidth}%"></div>
             <div class="release-marker" style="left: ${releasePercentage}%" data-percentage="${releasePercentage}%"></div>
           </div>
+          ${noStakeNote}
         </div>
       </div>
 
@@ -1119,34 +1154,34 @@ export function renderDashboard(rows: BlockProducerRow[], releasePercentage: num
             <span class="material-icons-outlined">savings</span>
           </div>
           <div class="label">Upgraded Active Stake</div>
-          <div class="value">${stakePercentage}%</div>
+          <div class="value">${stakeValue}</div>
         </div>
         <div class="stat-card muted">
           <div class="icon">
             <span class="material-icons-outlined">account_balance</span>
           </div>
           <div class="label">Upgraded Total Stake</div>
-          <div class="value">${totalStakePercentage}%</div>
+          <div class="value">${totalStakeValue}</div>
         </div>
         <div class="stat-card success">
           <div class="icon">
             <span class="material-icons-outlined">check_circle</span>
           </div>
-          <div class="label">Upgraded Block Producers</div>
+          <div class="label">Upgraded ${countNoun}</div>
           <div class="value">${upgradedCount}</div>
         </div>
         <div class="stat-card danger">
           <div class="icon">
             <span class="material-icons-outlined">schedule</span>
           </div>
-          <div class="label">Not Upgraded Block Producers</div>
+          <div class="label">Not Upgraded ${countNoun}</div>
           <div class="value">${pendingCount}</div>
         </div>
         <div class="stat-card primary">
           <div class="icon">
             <span class="material-icons-outlined">dns</span>
           </div>
-          <div class="label">Total Block Producers</div>
+          <div class="label">Total ${countNoun}</div>
           <div class="value">${total}</div>
         </div>
 
@@ -1217,13 +1252,17 @@ export function renderDashboard(rows: BlockProducerRow[], releasePercentage: num
     const ctx = document.getElementById('upgradeChart').getContext('2d');
     const upgradedStake = ${stakeStats.upgradedActiveStakePercent * 100};
     const remainingStake = 100 - upgradedStake;
+    // With no block producers tracked there is no stake to distribute. Charting
+    // 0/100 would paint a full "Not Upgraded" ring, which asserts the opposite of
+    // the truth; render a single neutral "No stake tracked" slice instead.
+    const hasBpStake = ${hasBpRows};
     new Chart(ctx, {
       type: 'doughnut',
       data: {
-        labels: ['Upgraded', 'Not Upgraded'],
+        labels: hasBpStake ? ['Upgraded', 'Not Upgraded'] : ['No stake tracked'],
         datasets: [{
-          data: [upgradedStake, remainingStake],
-          backgroundColor: ['#AFF4F8', '#FF603B'],
+          data: hasBpStake ? [upgradedStake, remainingStake] : [100],
+          backgroundColor: hasBpStake ? ['#AFF4F8', '#FF603B'] : ['#2d2d4a'],
           borderWidth: 0,
           borderRadius: 4,
           spacing: 4
@@ -1247,6 +1286,9 @@ export function renderDashboard(rows: BlockProducerRow[], releasePercentage: num
           tooltip: {
             callbacks: {
               label: function(context) {
+                // The placeholder slice is not a measurement, so appending a
+                // percentage to it would contradict its own label.
+                if (!hasBpStake) return context.label;
                 return context.label + ': ' + context.raw.toFixed(2) + '%';
               }
             }

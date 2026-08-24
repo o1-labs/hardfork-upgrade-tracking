@@ -28,6 +28,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://hardfork:hardfork@postgres:5432/hardfork_tracking}
       RELEASE_PERCENTAGE: ${RELEASE_PERCENTAGE:-65}
+      SHOW_NON_BP_NODES: ${SHOW_NON_BP_NODES:-false}
     ports:
       - "3000:3000"
     depends_on:
