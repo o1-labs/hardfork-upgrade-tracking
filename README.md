@@ -106,6 +106,7 @@ Docker images are published to GitHub Container Registry at `ghcr.io/o1-labs/har
 docker run --rm -p 3000:3000 \
   -e DATABASE_URL="postgresql://user:password@host:5432/db" \
   -e RELEASE_PERCENTAGE="65" \
+  -e SHOW_NON_BP_NODES="false" \
   ghcr.io/o1-labs/hardfork-upgrade-tracking:latest
 ```
 

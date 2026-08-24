@@ -75,6 +75,19 @@ export function renderDashboard(
   const stakePercentage = (stakeStats.upgradedActiveStakePercent * 100).toFixed(2);
   const totalStakePercentage = (stakeStats.upgradedTotalStakePercent * 100).toFixed(2);
 
+  // Stake is a block-producer property. On a fleet with no block producers at all
+  // (SHOW_NON_BP_NODES over seeds/archive) every stake figure is structurally
+  // zero, and rendering "0.00%" next to a full-orange donut reads as "the network
+  // has not upgraded" when the truth is "no stake is being measured here". Render
+  // an em dash and say so instead of asserting a number we do not have.
+  const hasBpRows = rows.some(r => r.block_producer_public_key !== null);
+  const stakeValue = hasBpRows ? `${stakePercentage}%` : '&mdash;';
+  const totalStakeValue = hasBpRows ? `${totalStakePercentage}%` : '&mdash;';
+  const stakeBarWidth = hasBpRows ? stakePercentage : '0';
+  const noStakeNote = hasBpRows
+    ? ''
+    : '<div class="adoption-note">No block producers are reporting to this deployment, so stake adoption cannot be measured. The counts below track reporting nodes.</div>';
+
   const tableRows = rows.map((s) => {
     const upgraded = s.upgraded;
     const bpKey = s.block_producer_public_key;
@@ -383,6 +396,13 @@ export function renderDashboard(
       border-radius: 8px;
       overflow: visible;
       position: relative;
+    }
+
+    .adoption-note {
+      margin-top: 14px;
+      font-size: 0.8rem;
+      line-height: 1.45;
+      color: var(--text-muted);
     }
 
     .adoption-bar-fill {
@@ -1118,12 +1138,13 @@ export function renderDashboard(
               <span class="material-icons-outlined">trending_up</span>
               <h2>Active Stake Adoption</h2>
             </div>
-            <div class="adoption-percentage">${stakePercentage}%</div>
+            <div class="adoption-percentage">${stakeValue}</div>
           </div>
           <div class="adoption-bar">
-            <div class="adoption-bar-fill" style="width: ${stakePercentage}%"></div>
+            <div class="adoption-bar-fill" style="width: ${stakeBarWidth}%"></div>
             <div class="release-marker" style="left: ${releasePercentage}%" data-percentage="${releasePercentage}%"></div>
           </div>
+          ${noStakeNote}
         </div>
       </div>
 
@@ -1133,14 +1154,14 @@ export function renderDashboard(
             <span class="material-icons-outlined">savings</span>
           </div>
           <div class="label">Upgraded Active Stake</div>
-          <div class="value">${stakePercentage}%</div>
+          <div class="value">${stakeValue}</div>
         </div>
         <div class="stat-card muted">
           <div class="icon">
             <span class="material-icons-outlined">account_balance</span>
           </div>
           <div class="label">Upgraded Total Stake</div>
-          <div class="value">${totalStakePercentage}%</div>
+          <div class="value">${totalStakeValue}</div>
         </div>
         <div class="stat-card success">
           <div class="icon">
@@ -1231,13 +1252,17 @@ export function renderDashboard(
     const ctx = document.getElementById('upgradeChart').getContext('2d');
     const upgradedStake = ${stakeStats.upgradedActiveStakePercent * 100};
     const remainingStake = 100 - upgradedStake;
+    // With no block producers tracked there is no stake to distribute. Charting
+    // 0/100 would paint a full "Not Upgraded" ring, which asserts the opposite of
+    // the truth; render a single neutral "No stake tracked" slice instead.
+    const hasBpStake = ${hasBpRows};
     new Chart(ctx, {
       type: 'doughnut',
       data: {
-        labels: ['Upgraded', 'Not Upgraded'],
+        labels: hasBpStake ? ['Upgraded', 'Not Upgraded'] : ['No stake tracked'],
         datasets: [{
-          data: [upgradedStake, remainingStake],
-          backgroundColor: ['#AFF4F8', '#FF603B'],
+          data: hasBpStake ? [upgradedStake, remainingStake] : [100],
+          backgroundColor: hasBpStake ? ['#AFF4F8', '#FF603B'] : ['#2d2d4a'],
           borderWidth: 0,
           borderRadius: 4,
           spacing: 4

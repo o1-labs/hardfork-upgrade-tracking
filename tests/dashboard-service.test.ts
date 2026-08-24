@@ -268,4 +268,54 @@ describe('groupByBlockProducer with includeNonBp', () => {
 
     expect(withKeyless).toEqual(withoutKeyless);
   });
+
+  it('strips stake off a keyless node even when the caller supplies it', () => {
+    // The invariant must be structural, not a property of how dashboard-service
+    // happens to enrich records. Feeding a keyless node with full stake fields is
+    // the only version of this test that can actually fail: `keyless()` nulls them
+    // up front, so a pass-through implementation would satisfy that one too.
+    const rows = groupByBlockProducer(
+      [
+        node({
+          block_producer_public_key: undefined,
+          peer_id: 'seed1',
+          upgraded: true,
+          is_active: true,
+          total_stake: 5000,
+          num_delegators: 9,
+          percent_total_active_stake: 0.3,
+          percent_total_stake: 0.25,
+        }),
+      ],
+      true
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      block_producer_public_key: null,
+      total_stake: null,
+      num_delegators: null,
+      percent_total_stake: null,
+      percent_total_active_stake: null,
+      is_active: null,
+      upgraded: true,
+    });
+
+    expect(computeStakeStats(rows, null)).toEqual({
+      upgradedActiveStakePercent: 0,
+      totalActiveStakePercent: 0,
+      upgradedTotalStakePercent: 0,
+      lastSync: null,
+    });
+  });
+
+  it('normalizes an empty-string BP key to null rather than leaving it ""', () => {
+    const rows = groupByBlockProducer(
+      [node({ block_producer_public_key: '', peer_id: 'p1', total_stake: 1000 })],
+      true
+    );
+
+    expect(rows[0].block_producer_public_key).toBeNull();
+    expect(rows[0].total_stake).toBeNull();
+  });
 });

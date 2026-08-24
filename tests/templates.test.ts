@@ -18,6 +18,21 @@ function bpRow(overrides: Partial<BlockProducerRow>): BlockProducerRow {
   };
 }
 
+// A row produced from a node that reported no block producer key: keyed by
+// peer_id, with every stake field nulled by groupByBlockProducer.
+function keylessRow(overrides: Partial<BlockProducerRow> = {}): BlockProducerRow {
+  return bpRow({
+    block_producer_public_key: null,
+    peer_id: 'seed_peer_1',
+    total_stake: null,
+    num_delegators: null,
+    percent_total_stake: null,
+    percent_total_active_stake: null,
+    is_active: null,
+    ...overrides,
+  });
+}
+
 const emptyStakeStats: StakeStats = {
   upgradedActiveStakePercent: 0,
   totalActiveStakePercent: 0,
@@ -95,31 +110,47 @@ describe('renderDashboard table', () => {
     expect(html).toContain('Total Nodes');
     expect(html).toContain('Upgraded Nodes');
     expect(html).toContain('Not Upgraded Nodes');
-    expect(html).not.toContain('Block Producers');
+    // Scoped to the card labels: the table header is "Block Producer Key", and
+    // unrelated copy elsewhere in the template should not fail this test.
+    expect(html).not.toContain('Total Block Producers');
+    expect(html).not.toContain('Upgraded Block Producers');
   });
 
-  it('renders a keyless row with a dash instead of a BP key', () => {
-    const html = renderDashboard(
-      [
-        bpRow({
-          block_producer_public_key: null,
-          peer_id: 'seed_peer_1',
-          total_stake: null,
-          num_delegators: null,
-          percent_total_stake: null,
-          percent_total_active_stake: null,
-          is_active: null,
-        }),
-      ],
-      80,
-      emptyStakeStats,
-      true
-    );
+  it('renders a keyless row with a dash and no copy button for the key', () => {
+    const html = renderDashboard([keylessRow()], 80, emptyStakeStats, true);
 
     expect(html).toContain('data-bp_key=""');
     expect(html).toContain('seed_peer_1');
-    // No copy button should be emitted for a non-existent key.
-    expect(html).not.toContain("copyToClipboard('null'");
+
+    // Assert positively on the BP-key cell rather than just the absence of a
+    // literal 'null': a bug emitting copyToClipboard('') would slip past that.
+    const bpCell = html.split('<td class="mono">')[1] ?? '';
+    expect(bpCell).toContain('-');
+    expect(bpCell).not.toContain('copy-btn');
+  });
+
+  it('shows an em dash and a note for stake when no block producer is tracked', () => {
+    const html = renderDashboard([keylessRow()], 85, emptyStakeStats, true);
+
+    expect(html).toContain('&mdash;');
+    expect(html).toContain('No block producers are reporting to this deployment');
+    // A literal 0.00% would read as "nothing has upgraded".
+    expect(html).not.toContain('<div class="adoption-percentage">0.00%</div>');
+    expect(html).toContain('const hasBpStake = false');
+    expect(html).toContain('width: 0%');
+  });
+
+  it('shows real stake figures when at least one block producer is tracked', () => {
+    const html = renderDashboard(
+      [bpRow({ block_producer_public_key: 'BP1' }), keylessRow()],
+      85,
+      { ...emptyStakeStats, upgradedActiveStakePercent: 0.42 },
+      true
+    );
+
+    expect(html).toContain('42.00%');
+    expect(html).not.toContain('No block producers are reporting to this deployment');
+    expect(html).toContain('const hasBpStake = true');
   });
 });
 

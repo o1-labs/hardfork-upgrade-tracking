@@ -44,8 +44,13 @@ Live: https://devnet-status.gcp.o1test.net/
     flag on the count cards read "Nodes" instead of "Block Producers".
   - `computeStakeStats` sums stake over those unique rows (so the cards and the
     table can never disagree). Keyless rows carry null stake fields and a null
-    `is_active`, so they contribute nothing — the stake gate stays block-producer
-    -only regardless of `SHOW_NON_BP_NODES`. Keep it that way.
+    `is_active` (nulled by `groupByBlockProducer` itself, not by the caller), so
+    they contribute nothing and the stake gate stays block-producer-only
+    regardless of `SHOW_NON_BP_NODES`. Keep it that way.
+  - When **no** row has a BP key, `renderDashboard` renders the stake figures as
+    an em dash with an explanatory note, and the donut as a single neutral slice
+    — a literal `0.00%` there reads as "nothing upgraded" rather than "no stake
+    is being measured".
 - **Commits column** (`src/templates.ts`): shows the first 2 short hashes inline +
   a muted `+N more`. Hover shows a styled, body-level tooltip with the full list
   (positioned so it flips above the cell near the bottom of the screen and never
