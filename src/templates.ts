@@ -1102,7 +1102,7 @@ export function renderDashboard(
       <div class="header-stats">
         <div class="header-stat">
           <div class="label">Active Stake Upgraded</div>
-          <div class="value success">${stakePercentage}%</div>
+          <div class="value success">${stakeValue}</div>
         </div>
         <div class="header-stat">
           <div class="label">Upgraded</div>
@@ -1286,6 +1286,9 @@ export function renderDashboard(
           tooltip: {
             callbacks: {
               label: function(context) {
+                // The placeholder slice is not a measurement, so appending a
+                // percentage to it would contradict its own label.
+                if (!hasBpStake) return context.label;
                 return context.label + ': ' + context.raw.toFixed(2) + '%';
               }
             }

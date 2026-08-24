@@ -134,8 +134,10 @@ describe('renderDashboard table', () => {
 
     expect(html).toContain('&mdash;');
     expect(html).toContain('No block producers are reporting to this deployment');
-    // A literal 0.00% would read as "nothing has upgraded".
-    expect(html).not.toContain('<div class="adoption-percentage">0.00%</div>');
+    // Document-wide, not scoped to one div: the header, the adoption headline and
+    // both stat cards render the same metric, and a narrow assertion let the
+    // header keep saying "0.00%" while the cards said "—".
+    expect(html).not.toContain('0.00%');
     expect(html).toContain('const hasBpStake = false');
     expect(html).toContain('width: 0%');
   });

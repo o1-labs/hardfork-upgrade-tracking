@@ -56,7 +56,9 @@ Live: https://devnet-status.gcp.o1test.net/
   (positioned so it flips above the cell near the bottom of the screen and never
   clips). The copy button + CSV export use the complete comma-separated list
   (`data-commit`). Cap is `MAX_VISIBLE_COMMITS` in `renderDashboard`.
-- **Summary cards count block producers, not node records** ("… Block Producers").
+- **Summary cards count block producers, not node records** ("… Block Producers")
+  — unless `SHOW_NON_BP_NODES` is on, where they count rows and the noun becomes
+  "Nodes" (`countNoun` in `renderDashboard`).
 - **Responsive:** `≤1024px` collapses the 5-col dashboard grid to 2; `≤640px` is a
   single column and **hides the header stats** (they duplicate the cards below).
 

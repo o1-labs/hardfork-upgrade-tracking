@@ -81,13 +81,21 @@ describe('dashboardService.render wiring', () => {
     expect(html).not.toContain('Total Block Producers');
   });
 
-  it('keeps block producer stake intact when keyless nodes are admitted', async () => {
+  it('keeps the aggregate stake headline intact when keyless nodes are admitted', async () => {
+    // Mark the BP upgraded so it actually contributes to upgradedActiveStakePercent
+    // — otherwise the only "30.00%" in the HTML is the row's own table cell, and
+    // the assertion would pass without exercising the aggregate at all.
+    mockedStats.getAll.mockResolvedValue([
+      NODE_RECORDS[0],
+      { ...NODE_RECORDS[1], upgraded: true },
+    ] as any);
+
     const withoutFlag = await dashboardService.render(85);
     const withFlag = await dashboardService.render(85, true);
 
-    // The one BP contributes 30% active stake either way; admitting the seed
-    // must not dilute or inflate it.
-    expect(withoutFlag).toContain('30.00%');
-    expect(withFlag).toContain('30.00%');
+    // The one BP holds 30% active stake. Admitting two keyless seeds alongside it
+    // must neither dilute nor inflate the headline.
+    expect(withoutFlag).toContain('<div class="adoption-percentage">30.00%</div>');
+    expect(withFlag).toContain('<div class="adoption-percentage">30.00%</div>');
   });
 });
