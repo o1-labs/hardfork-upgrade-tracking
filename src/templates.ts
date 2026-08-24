@@ -21,7 +21,12 @@ export interface StakeStats {
  * distinct list of commits the BP reported across all its node records.
  */
 export interface BlockProducerRow {
-  block_producer_public_key: string;
+  /**
+   * Null only for a row produced from a node that reported no block producer key,
+   * which happens when groupByBlockProducer is called with `includeNonBp` (see
+   * SHOW_NON_BP_NODES). Those rows are keyed by peer_id and carry no stake data.
+   */
+  block_producer_public_key: string | null;
   upgraded: boolean;
   total_stake: number | null;
   num_delegators: number | null;
@@ -53,7 +58,16 @@ function formatPercent(pct: number | null): string {
   return (pct * 100).toFixed(2) + '%';
 }
 
-export function renderDashboard(rows: BlockProducerRow[], releasePercentage: number, stakeStats: StakeStats): string {
+export function renderDashboard(
+  rows: BlockProducerRow[],
+  releasePercentage: number,
+  stakeStats: StakeStats,
+  includeNonBp: boolean = false
+): string {
+  // With non-BP nodes admitted the rows are no longer one-per-block-producer, so
+  // the count labels have to say "Nodes" or they misdescribe what they total.
+  // The stake cards are unaffected — keyless rows contribute no stake.
+  const countNoun = includeNonBp ? 'Nodes' : 'Block Producers';
   const total = rows.length;
   const upgradedCount = rows.filter(r => r.upgraded).length;
   const pendingCount = total - upgradedCount;
@@ -1079,7 +1093,7 @@ export function renderDashboard(rows: BlockProducerRow[], releasePercentage: num
           <div class="value danger">${pendingCount}</div>
         </div>
         <div class="header-stat">
-          <div class="label">Block Producers</div>
+          <div class="label">${countNoun}</div>
           <div class="value primary">${total}</div>
         </div>
       </div>
@@ -1132,21 +1146,21 @@ export function renderDashboard(rows: BlockProducerRow[], releasePercentage: num
           <div class="icon">
             <span class="material-icons-outlined">check_circle</span>
           </div>
-          <div class="label">Upgraded Block Producers</div>
+          <div class="label">Upgraded ${countNoun}</div>
           <div class="value">${upgradedCount}</div>
         </div>
         <div class="stat-card danger">
           <div class="icon">
             <span class="material-icons-outlined">schedule</span>
           </div>
-          <div class="label">Not Upgraded Block Producers</div>
+          <div class="label">Not Upgraded ${countNoun}</div>
           <div class="value">${pendingCount}</div>
         </div>
         <div class="stat-card primary">
           <div class="icon">
             <span class="material-icons-outlined">dns</span>
           </div>
-          <div class="label">Total Block Producers</div>
+          <div class="label">Total ${countNoun}</div>
           <div class="value">${total}</div>
         </div>
 

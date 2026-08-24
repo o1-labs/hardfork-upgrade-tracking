@@ -4,7 +4,7 @@ import { groupByBlockProducer, computeStakeStats } from './block-producer-rows';
 import { renderDashboard, EnrichedNodeStats } from '../templates';
 
 export const dashboardService = {
-  async render(releasePercentage: number): Promise<string> {
+  async render(releasePercentage: number, includeNonBp: boolean = false): Promise<string> {
     const stats = await statsService.getAll();
     const blockProducers = await blockProducerService.getAll();
     const lastSync = await blockProducerService.getLastSyncTime();
@@ -25,11 +25,13 @@ export const dashboardService = {
       };
     });
 
-    // Collapse to one row per block producer (folds restart duplicates, drops
-    // nodes with no BP key), then derive stake stats from those unique rows.
-    const rows = groupByBlockProducer(enrichedStats);
+    // Collapse to one row per block producer (folds restart duplicates). Nodes
+    // with no BP key are dropped unless includeNonBp is set, in which case they
+    // get one row each keyed by peer_id. Stake stats are then derived from those
+    // rows — keyless rows carry no stake, so they never affect the totals.
+    const rows = groupByBlockProducer(enrichedStats, includeNonBp);
     const stakeStats = computeStakeStats(rows, lastSync);
 
-    return renderDashboard(rows, releasePercentage, stakeStats);
+    return renderDashboard(rows, releasePercentage, stakeStats, includeNonBp);
   },
 };

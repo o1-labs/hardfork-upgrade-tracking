@@ -12,19 +12,35 @@ import type { EnrichedNodeStats, StakeStats, BlockProducerRow } from '../templat
  *  - max_observed_block_height is the max across the group.
  *
  * Nodes that reported no block producer key are dropped (not useful in the table;
- * still retained in the DB for later access).
+ * still retained in the DB for later access) — unless `includeNonBp` is set.
+ *
+ * `includeNonBp` exists for networks where o1Labs runs no block producers of its
+ * own (mainnet: archive + seeds only). There every node we operate reports a null
+ * BP key, so the default behaviour hides 100% of the fleet and the table renders
+ * empty. With the flag on, each keyless node gets its own row keyed by `peer_id`;
+ * there is no BP key to fold restart duplicates on, so a node that restarts under
+ * a new peer_id shows up as a separate row.
+ *
+ * Stake math is unaffected either way: keyless rows carry null stake fields and a
+ * null `is_active`, both of which computeStakeStats already skips.
  */
-export function groupByBlockProducer(stats: EnrichedNodeStats[]): BlockProducerRow[] {
+export function groupByBlockProducer(
+  stats: EnrichedNodeStats[],
+  includeNonBp: boolean = false
+): BlockProducerRow[] {
   const groups = new Map<string, BlockProducerRow>();
 
   for (const s of stats) {
     const bpKey = s.block_producer_public_key;
-    if (!bpKey) continue;
+    if (!bpKey && !includeNonBp) continue;
 
-    let row = groups.get(bpKey);
+    // Namespace the two key spaces so a peer_id can never collide with a BP key.
+    const groupKey = bpKey ? `bp:${bpKey}` : `peer:${s.peer_id}`;
+
+    let row = groups.get(groupKey);
     if (!row) {
       row = {
-        block_producer_public_key: bpKey,
+        block_producer_public_key: bpKey ?? null,
         upgraded: false,
         total_stake: s.total_stake,
         num_delegators: s.num_delegators,
@@ -37,7 +53,7 @@ export function groupByBlockProducer(stats: EnrichedNodeStats[]): BlockProducerR
         peer_count: s.peer_count,
         peer_id: s.peer_id,
       };
-      groups.set(bpKey, row);
+      groups.set(groupKey, row);
     }
 
     row.upgraded = row.upgraded || !!s.upgraded;

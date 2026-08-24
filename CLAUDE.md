@@ -35,8 +35,17 @@ Live: https://devnet-status.gcp.o1test.net/
     is upgraded; `commits` = distinct list (first-seen order); peer/timestamp from
     the **most recent** report; block height = **max**; nodes with **no BP key are
     dropped** (still kept in the DB for potential future use).
+  - **`SHOW_NON_BP_NODES=true`** flips that last rule: keyless nodes are admitted
+    as one row each, keyed by `peer_id` (no BP key means no restart-folding, so a
+    restart under a new peer_id becomes a new row). That is why
+    `BlockProducerRow.block_producer_public_key` is `string | null`. Intended for
+    networks where o1Labs runs no block producers of its own — on mainnet the
+    fleet is archive + seeds, so the default view is permanently empty. With the
+    flag on the count cards read "Nodes" instead of "Block Producers".
   - `computeStakeStats` sums stake over those unique rows (so the cards and the
-    table can never disagree).
+    table can never disagree). Keyless rows carry null stake fields and a null
+    `is_active`, so they contribute nothing — the stake gate stays block-producer
+    -only regardless of `SHOW_NON_BP_NODES`. Keep it that way.
 - **Commits column** (`src/templates.ts`): shows the first 2 short hashes inline +
   a muted `+N more`. Hover shows a styled, body-level tooltip with the full list
   (positioned so it flips above the cell near the bottom of the screen and never

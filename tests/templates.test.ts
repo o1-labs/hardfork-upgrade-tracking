@@ -88,6 +88,39 @@ describe('renderDashboard table', () => {
     expect(html).toContain('Upgraded Block Producers');
     expect(html).toContain('Not Upgraded Block Producers');
   });
+
+  it('relabels the count cards as Nodes when non-BP nodes are admitted', () => {
+    const html = renderDashboard([bpRow({})], 80, emptyStakeStats, true);
+
+    expect(html).toContain('Total Nodes');
+    expect(html).toContain('Upgraded Nodes');
+    expect(html).toContain('Not Upgraded Nodes');
+    expect(html).not.toContain('Block Producers');
+  });
+
+  it('renders a keyless row with a dash instead of a BP key', () => {
+    const html = renderDashboard(
+      [
+        bpRow({
+          block_producer_public_key: null,
+          peer_id: 'seed_peer_1',
+          total_stake: null,
+          num_delegators: null,
+          percent_total_stake: null,
+          percent_total_active_stake: null,
+          is_active: null,
+        }),
+      ],
+      80,
+      emptyStakeStats,
+      true
+    );
+
+    expect(html).toContain('data-bp_key=""');
+    expect(html).toContain('seed_peer_1');
+    // No copy button should be emitted for a non-existent key.
+    expect(html).not.toContain("copyToClipboard('null'");
+  });
 });
 
 // Test template helper functions
